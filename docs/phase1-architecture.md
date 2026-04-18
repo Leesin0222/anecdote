@@ -9,21 +9,22 @@
 
 | # | 항목 | 결정 |
 |---|------|------|
-| 1 | 기존 `app/` 모듈 처리 | 삭제 후 `sample/` 신규 생성 |
-| 2 | API 스타일 | Builder 패턴 |
+| 1 | 기존 `app/` 모듈 처리 | 삭제 후 `sample/`을 신규로 생성합니다 |
+| 2 | API 스타일 | Builder 패턴을 사용합니다 |
 | 3 | 루트 패키지 | `com.yongjincompany.anecdote` |
-| 4 | 디버그 리포터 | `reporter-logcat` 1개만 (memory 리포터 미포함) |
+| 4 | 디버그 리포터 | `reporter-logcat` 하나만 포함합니다 (memory 리포터는 포함하지 않습니다) |
 | 5 | Gradle convention plugin 위치 | `build-logic/` |
 | 6 | minSdk | 24 (Android 7.0) |
 
-### 상위 기획 결정 (이전 확정)
-- SDK 제품명: **anecdote**
-- 배포 범위: 사내 앱 전용 (AAR 직접 전달 허용, Maven은 후순위)
-- 검증 대상: 사내 앱테크(보상형) 앱들
-- 스코프: **감지 전용** (차단 회피/게이트 UX 미포함)
-- HTTP 클라이언트: OkHttp
-- iOS/KMP: 미지원 (Android only)
-- 게이트 UX: 호스트 앱 책임
+### 상위 기획 결정 (이전에 확정된 내용입니다)
+
+- SDK 제품명은 **anecdote**로 확정했습니다.
+- 배포 범위는 사내 앱 전용입니다 (AAR 직접 전달을 허용하며, Maven은 후순위로 둡니다).
+- 검증 대상은 앱테크(보상형) 앱들입니다.
+- 스코프는 **감지 전용**입니다 (차단 회피/게이트 UX는 포함하지 않습니다).
+- HTTP 클라이언트는 OkHttp를 사용합니다.
+- iOS/KMP는 지원하지 않습니다 (Android 전용입니다).
+- 게이트 UX는 호스트 앱에서 책임지고 구현합니다.
 
 ---
 
@@ -43,7 +44,7 @@ anecdote/
 │       └── src/main/kotlin/
 │           ├── AnecdoteLibraryConventionPlugin.kt
 │           └── AnecdoteApplicationConventionPlugin.kt
-├── anecdote-core/                           # 광고 SDK 독립 감지 로직
+├── anecdote-core/                           # 광고 SDK와 독립적인 감지 로직
 ├── anecdote-adapter-admob/                  # GMA Next-Gen 어댑터
 ├── anecdote-reporter-firebase/              # Firebase Analytics 리포터
 ├── anecdote-reporter-logcat/                # 디버그용 로그 리포터
@@ -52,10 +53,11 @@ anecdote/
     └── phase1-architecture.md
 ```
 
-**마이그레이션 작업**:
-- 기존 `app/` 디렉토리 완전 삭제
-- `sample/` 모듈로 Compose 기반 신규 생성
-- `settings.gradle.kts`에서 `:app` 제거, 신규 모듈 5개 등록
+**마이그레이션 작업**
+
+- 기존 `app/` 디렉토리를 완전히 삭제합니다.
+- `sample/` 모듈을 Compose 기반으로 신규 생성합니다.
+- `settings.gradle.kts`에서 `:app`을 제거하고, 신규 모듈 5개를 등록합니다.
 
 ---
 
@@ -172,11 +174,12 @@ lifecycleScope.launch {
 }
 ```
 
-**AdMob 어댑터 연결** (선택적):
+**AdMob 어댑터 연결 (선택)**
+
 ```kotlin
 val admobSource = GmaSignalSource()
 detector.registerSignalSource(admobSource)
-// AdMob 호출부에서 admobSource가 자동으로 콜백 훅
+// AdMob 호출부에서 admobSource가 자동으로 콜백을 연결합니다
 ```
 
 ---
@@ -287,12 +290,13 @@ public interface BlockEventReporter {
                          └─────────────┘
 ```
 
-**의존성 규칙**:
-- `anecdote-core`는 광고 SDK / analytics SDK에 의존하지 않음
-- 어댑터 ↔ 어댑터 의존 금지
-- 리포터 ↔ 리포터 의존 금지
-- 어댑터 ↔ 리포터 의존 금지
-- `sample`만 전체 조합 가능
+**의존성 규칙**
+
+- `anecdote-core`는 광고 SDK / analytics SDK에 의존하지 않습니다.
+- 어댑터끼리는 서로 의존할 수 없습니다.
+- 리포터끼리도 서로 의존할 수 없습니다.
+- 어댑터와 리포터 간에도 의존하지 않습니다.
+- 전체 조합이 가능한 모듈은 `sample`뿐입니다.
 
 ---
 
@@ -397,14 +401,14 @@ class AnecdoteLibraryConventionPlugin : Plugin<Project> {
 
 ## 6. Phase 2 진입 체크리스트
 
-Phase 2(Core 모듈) 시작 전 완료해야 할 것들:
+Phase 2 (Core 모듈) 작업을 시작하기 전에 아래 항목들을 먼저 마쳐두시면 됩니다.
 
 - [ ] 기존 `app/` 디렉토리 삭제
 - [ ] `build-logic/` 디렉토리 및 convention plugin 생성
 - [ ] `gradle/libs.versions.toml` 작성
 - [ ] `settings.gradle.kts` 업데이트 (모듈 5개 등록)
 - [ ] `anecdote-core/build.gradle.kts` 작성 (convention plugin 적용)
-- [ ] `anecdote-core` 빈 모듈 빌드 성공 확인
-- [ ] `AdBlockDetector`, `BlockState`, `AdNetworkSignal` 등 Public API 인터페이스/시그니처만 먼저 커밋 (구현은 이후)
+- [ ] `anecdote-core` 빈 모듈의 빌드 성공 확인
+- [ ] `AdBlockDetector`, `BlockState`, `AdNetworkSignal` 등 Public API 인터페이스/시그니처만 먼저 커밋 (구현은 이후 단계에서 진행합니다)
 
-이 체크리스트가 끝나면 Phase 2.1(Active Probe 엔진)부터 실제 로직 구현 진입.
+이 체크리스트가 끝나면 Phase 2.1 (Active Probe 엔진)부터 실제 로직 구현에 들어가게 됩니다.
