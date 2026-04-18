@@ -20,6 +20,9 @@ import kotlinx.coroutines.flow.asSharedFlow
  *
  * `networkId` must be unique across all sources. Built-in reserved values:
  * `"probe"`, `"env"`. Adapter modules use their own stable ids (`"admob"`, `"applovin"`, …).
+ *
+ * The raw [emit] API validates that the signal's own `networkId` matches this source's
+ * `networkId`; otherwise the aggregator would mis-attribute statistics across networks.
  */
 public class CustomSignalSource(
     override val networkId: String,
@@ -47,10 +50,15 @@ public class CustomSignalSource(
     }
 
     /**
-     * Push an arbitrary signal. Returns `true` if accepted, `false` if the buffer is full
-     * (caller emitted faster than the detector could consume — generally indicates a bug).
+     * Push an arbitrary signal. The signal's `networkId` must match this source's
+     * `networkId`. Returns `true` if accepted, `false` if the buffer is full.
      */
-    public fun emit(signal: AdNetworkSignal): Boolean = _signals.tryEmit(signal)
+    public fun emit(signal: AdNetworkSignal): Boolean {
+        require(signal.networkId == networkId) {
+            "Signal networkId '${signal.networkId}' does not match source networkId '$networkId'"
+        }
+        return _signals.tryEmit(signal)
+    }
 
     /**
      * Record an ad load failure with the provided classification.

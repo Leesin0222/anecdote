@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,78 +29,121 @@ public class AdBlockDetector private constructor(
     private val config: DetectorConfig,
 ) {
 
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private val aggregator = SignalAggregator(scope = scope)
     private val evaluator = BlockStateEvaluator(config.policyConfig)
     private val gate = DetectorGate(
         gracePeriodMs = config.probeConfig.gracePeriodMs,
         maxEvaluationsPerSession = config.policyConfig.maxEvaluationsPerSession,
     )
 
+    // Single shared OkHttpClient reused across start/stop cycles to avoid
+    // accumulating connection pools and executor threads.
+    private val okHttpClient = OkHttpReachabilityChecker.defaultClient(
+        timeoutMs = config.probeConfig.timeoutMs,
+    )
+
     private val _state = MutableStateFlow<BlockState>(BlockState.Unknown)
     public val state: StateFlow<BlockState> = _state.asStateFlow()
 
+    private val lock = Any()
+
+    // All fields below are guarded by [lock].
+    private var scope: CoroutineScope? = null
+    private var aggregator: SignalAggregator? = null
     private val builtInSources: MutableList<AdNetworkSignalSource> = mutableListOf()
+    private val dynamicSources: MutableList<AdNetworkSignalSource> = mutableListOf()
     private val reporterForwardJobs: MutableMap<AdNetworkSignalSource, Job> = mutableMapOf()
     private var evaluationJob: Job? = null
 
     public fun start() {
-        if (evaluationJob?.isActive == true) return
+        synchronized(lock) {
+            if (scope != null) return
 
-        gate.onStart(System.currentTimeMillis())
-        _state.value = BlockState.Unknown
+            val newScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+            val newAggregator = SignalAggregator(scope = newScope)
+            scope = newScope
+            aggregator = newAggregator
 
-        val probe = AdDomainProber(
-            config = config.probeConfig,
-            checker = OkHttpReachabilityChecker(
-                client = OkHttpReachabilityChecker.defaultClient(config.probeConfig.timeoutMs),
-            ),
-        )
-        val env = NetworkEnvironmentSource(
-            reader = AndroidNetworkEnvironmentReader(config.context),
-            registrar = AndroidNetworkChangeRegistrar(config.context),
-        )
-        builtInSources += probe
-        builtInSources += env
+            gate.onStart(System.currentTimeMillis())
+            _state.value = BlockState.Unknown
 
-        (builtInSources + config.signalSources).forEach(::attachSource)
+            val probe = AdDomainProber(
+                config = config.probeConfig,
+                checker = OkHttpReachabilityChecker(client = okHttpClient),
+                scope = newScope,
+            )
+            val env = NetworkEnvironmentSource(
+                reader = AndroidNetworkEnvironmentReader(config.context),
+                registrar = AndroidNetworkChangeRegistrar(config.context),
+            )
+            builtInSources.clear()
+            builtInSources += probe
+            builtInSources += env
 
-        evaluationJob = scope.launch {
-            aggregator.snapshot.collect { snap -> reevaluateInternal(snap) }
+            (builtInSources + config.signalSources + dynamicSources).forEach { source ->
+                attachSourceLocked(source, newScope, newAggregator)
+            }
+
+            evaluationJob = newScope.launch {
+                newAggregator.snapshot.collect { snap -> reevaluateInternal(snap) }
+            }
         }
     }
 
     public fun stop() {
-        evaluationJob?.cancel()
-        evaluationJob = null
+        synchronized(lock) {
+            val currentScope = scope ?: return
 
-        (builtInSources + config.signalSources).forEach { source ->
-            source.stop()
-            detachSource(source)
+            evaluationJob?.cancel()
+            evaluationJob = null
+
+            (builtInSources + config.signalSources + dynamicSources).forEach { it.stop() }
+            builtInSources.clear()
+            reporterForwardJobs.values.forEach { it.cancel() }
+            reporterForwardJobs.clear()
+            aggregator?.stop()
+            aggregator = null
+            currentScope.cancel()
+            scope = null
         }
-        builtInSources.clear()
-        aggregator.stop()
     }
 
     public fun reevaluate() {
-        scope.launch {
-            reevaluateInternal(aggregator.snapshot.value)
+        val snap: AggregateSnapshot = synchronized(lock) {
+            aggregator?.snapshot?.value ?: return
         }
+        reevaluateInternal(snap)
     }
 
     public fun registerSignalSource(source: AdNetworkSignalSource) {
-        attachSource(source)
+        synchronized(lock) {
+            if (dynamicSources.contains(source)) return
+            dynamicSources += source
+            val currentScope = scope
+            val currentAggregator = aggregator
+            if (currentScope != null && currentAggregator != null) {
+                attachSourceLocked(source, currentScope, currentAggregator)
+            }
+        }
     }
 
     public fun unregisterSignalSource(source: AdNetworkSignalSource) {
-        source.stop()
-        detachSource(source)
+        synchronized(lock) {
+            if (!dynamicSources.remove(source)) return
+            if (scope != null) {
+                source.stop()
+                detachSourceLocked(source)
+            }
+        }
     }
 
-    private fun attachSource(source: AdNetworkSignalSource) {
-        aggregator.register(source)
+    private fun attachSourceLocked(
+        source: AdNetworkSignalSource,
+        currentScope: CoroutineScope,
+        currentAggregator: SignalAggregator,
+    ) {
+        currentAggregator.register(source)
         if (config.reporters.isNotEmpty()) {
-            reporterForwardJobs[source] = scope.launch {
+            reporterForwardJobs[source] = currentScope.launch {
                 source.signals.collect { signal ->
                     config.reporters.forEach { it.onSignalReceived(signal) }
                 }
@@ -108,11 +152,12 @@ public class AdBlockDetector private constructor(
         source.start()
     }
 
-    private fun detachSource(source: AdNetworkSignalSource) {
-        aggregator.unregister(source)
+    private fun detachSourceLocked(source: AdNetworkSignalSource) {
+        aggregator?.unregister(source)
         reporterForwardJobs.remove(source)?.cancel()
     }
 
+    @Synchronized
     private fun reevaluateInternal(snapshot: AggregateSnapshot) {
         val now = System.currentTimeMillis()
         if (!gate.shouldEvaluate(now, snapshot.environment)) return

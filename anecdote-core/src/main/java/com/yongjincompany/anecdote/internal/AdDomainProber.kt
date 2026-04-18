@@ -3,11 +3,9 @@ package com.yongjincompany.anecdote.internal
 import com.yongjincompany.anecdote.config.ProbeConfig
 import com.yongjincompany.anecdote.signal.AdNetworkSignal
 import com.yongjincompany.anecdote.signal.AdNetworkSignalSource
-import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -21,8 +19,8 @@ import kotlinx.coroutines.launch
 internal class AdDomainProber(
     private val config: ProbeConfig,
     private val checker: HttpReachabilityChecker,
+    private val scope: CoroutineScope,
     private val clock: Clock = SystemClock,
-    dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : AdNetworkSignalSource {
 
     override val networkId: String = AdNetworkSignal.ProbeResult.NETWORK_ID
@@ -33,14 +31,19 @@ internal class AdDomainProber(
     )
     override val signals: SharedFlow<AdNetworkSignal> = _signals.asSharedFlow()
 
-    private val scope = CoroutineScope(dispatcher + SupervisorJob())
     private var cycleJob: Job? = null
 
     override fun start() {
         if (cycleJob?.isActive == true) return
         cycleJob = scope.launch {
             while (isActive) {
-                runProbeCycle()
+                try {
+                    runProbeCycle()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Throwable) {
+                    // Swallow unexpected exceptions from a single cycle so the loop survives.
+                }
                 delay(config.intervalMs)
             }
         }
@@ -70,7 +73,13 @@ internal class AdDomainProber(
         domain: String,
         isControl: Boolean,
     ): AdNetworkSignal.ProbeResult {
-        val result = checker.check("https://$domain/")
+        val result = try {
+            checker.check("https://$domain/")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            HttpReachabilityResult(reachable = false, latencyMs = null)
+        }
         return AdNetworkSignal.ProbeResult(
             networkId = AdNetworkSignal.ProbeResult.NETWORK_ID,
             timestamp = clock.now(),

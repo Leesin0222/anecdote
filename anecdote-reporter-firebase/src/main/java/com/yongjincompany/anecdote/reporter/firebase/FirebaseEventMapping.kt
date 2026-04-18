@@ -60,7 +60,9 @@ internal fun Map<String, Any>.toBundle(): Bundle {
             is Double -> bundle.putDouble(key, value)
             is Int -> bundle.putLong(key, value.toLong())
             is Boolean -> bundle.putLong(key, if (value) 1L else 0L)
-            else -> bundle.putString(key, value.toString())
+            else -> error(
+                "Unsupported Firebase param type for key '$key': ${value::class.simpleName}"
+            )
         }
     }
     return bundle

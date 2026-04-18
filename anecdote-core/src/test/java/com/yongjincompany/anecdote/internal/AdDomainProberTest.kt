@@ -4,7 +4,6 @@ import app.cash.turbine.test
 import com.yongjincompany.anecdote.config.ProbeConfig
 import com.yongjincompany.anecdote.signal.AdNetworkSignal
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -38,8 +37,8 @@ class AdDomainProberTest {
         val prober = AdDomainProber(
             config = probeConfig(),
             checker = checker,
+            scope = backgroundScope,
             clock = fixedClock,
-            dispatcher = StandardTestDispatcher(testScheduler),
         )
 
         prober.signals.test {
@@ -77,8 +76,8 @@ class AdDomainProberTest {
         val prober = AdDomainProber(
             config = probeConfig(intervalMs = 1_000L),
             checker = checker,
+            scope = backgroundScope,
             clock = fixedClock,
-            dispatcher = StandardTestDispatcher(testScheduler),
         )
 
         prober.start()
@@ -93,6 +92,36 @@ class AdDomainProberTest {
         testScheduler.advanceTimeBy(5_000L)
         testScheduler.runCurrent()
         assertEquals(6, callCount)
+    }
+
+    @Test
+    fun `checker throwing non-IOException does not kill probe loop`() = runTest {
+        var failedCycles = 0
+        var successCycles = 0
+        val checker = HttpReachabilityChecker {
+            if (failedCycles == 0 && it == "https://ad1.example/") {
+                failedCycles++
+                throw IllegalArgumentException("bad url")
+            }
+            successCycles++
+            HttpReachabilityResult(true, 10)
+        }
+        val prober = AdDomainProber(
+            config = probeConfig(intervalMs = 1_000L),
+            checker = checker,
+            scope = backgroundScope,
+            clock = fixedClock,
+        )
+
+        prober.start()
+        testScheduler.runCurrent()
+        // First cycle: one domain throws → should produce failure result, not crash loop
+        val firstBurst = successCycles
+
+        testScheduler.advanceTimeBy(1_000L)
+        testScheduler.runCurrent()
+        // Second cycle still runs → callback fired for all 3 domains
+        assertTrue("loop must keep running after transient throw; successCycles=$successCycles", successCycles > firstBurst)
     }
 
     private companion object {

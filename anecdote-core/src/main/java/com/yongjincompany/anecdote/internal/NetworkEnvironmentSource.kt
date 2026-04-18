@@ -2,6 +2,7 @@ package com.yongjincompany.anecdote.internal
 
 import com.yongjincompany.anecdote.signal.AdNetworkSignal
 import com.yongjincompany.anecdote.signal.AdNetworkSignalSource
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -36,6 +37,9 @@ internal class NetworkEnvironmentSource(
     private val _signals = MutableSharedFlow<AdNetworkSignal>(
         replay = 1,
         extraBufferCapacity = 8,
+        // Network-env signals are state-like; newest always wins. Dropping the oldest
+        // on overflow avoids stale env leaking through while never losing the latest.
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     override val signals: SharedFlow<AdNetworkSignal> = _signals.asSharedFlow()
 

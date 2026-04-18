@@ -12,12 +12,26 @@ public class PolicyConfig internal constructor(
         public var maxEvaluationsPerSession: Int = 3
         public var disabledRegionMccs: Set<Int> = setOf(MCC_CHINA)
 
-        internal fun build(): PolicyConfig = PolicyConfig(
-            thresholdSuspected = thresholdSuspected,
-            thresholdBlocked = thresholdBlocked,
-            maxEvaluationsPerSession = maxEvaluationsPerSession,
-            disabledRegionMccs = disabledRegionMccs,
-        )
+        internal fun build(): PolicyConfig {
+            require(thresholdSuspected in 0..100) {
+                "thresholdSuspected must be in 0..100, got $thresholdSuspected"
+            }
+            require(thresholdBlocked in 0..100) {
+                "thresholdBlocked must be in 0..100, got $thresholdBlocked"
+            }
+            require(thresholdSuspected <= thresholdBlocked) {
+                "thresholdSuspected ($thresholdSuspected) must not exceed thresholdBlocked ($thresholdBlocked)"
+            }
+            require(maxEvaluationsPerSession > 0) {
+                "maxEvaluationsPerSession must be positive, got $maxEvaluationsPerSession"
+            }
+            return PolicyConfig(
+                thresholdSuspected = thresholdSuspected,
+                thresholdBlocked = thresholdBlocked,
+                maxEvaluationsPerSession = maxEvaluationsPerSession,
+                disabledRegionMccs = disabledRegionMccs,
+            )
+        }
     }
 
     public companion object {

@@ -87,6 +87,14 @@ class CustomSignalSourceTest {
     }
 
     @Test
+    fun `emit rejects signal whose networkId does not match source`() {
+        val source = CustomSignalSource(networkId = "my-network")
+        assertThrows(IllegalArgumentException::class.java) {
+            source.emit(AdNetworkSignal.LoadSucceeded(networkId = "other", timestamp = 1L))
+        }
+    }
+
+    @Test
     fun `multiple emits all delivered to subscriber in order`() = runTest {
         val source = CustomSignalSource(networkId = "my-network")
 

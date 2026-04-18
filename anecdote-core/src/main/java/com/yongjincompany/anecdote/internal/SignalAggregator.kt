@@ -16,10 +16,12 @@ internal class SignalAggregator(
     private val windowDurationMs: Long = DEFAULT_WINDOW_MS,
     private val clock: Clock = SystemClock,
 ) {
-    private val mutex = Mutex()
+    private val eventMutex = Mutex()
+    private val subscriptionLock = Any()
+
     private val subscriptionJobs = linkedMapOf<AdNetworkSignalSource, Job>()
 
-    // Guarded by mutex
+    // Guarded by eventMutex
     private val events: ArrayDeque<AdNetworkSignal> = ArrayDeque()
     private var latestEnvironment: AdNetworkSignal.NetworkEnvironment? = null
 
@@ -27,21 +29,27 @@ internal class SignalAggregator(
     val snapshot: StateFlow<AggregateSnapshot> = _snapshot.asStateFlow()
 
     fun register(source: AdNetworkSignalSource) {
-        if (subscriptionJobs.containsKey(source)) return
-        subscriptionJobs[source] = scope.launch {
-            source.signals.collect { signal ->
-                handleSignal(signal)
+        synchronized(subscriptionLock) {
+            if (subscriptionJobs.containsKey(source)) return
+            subscriptionJobs[source] = scope.launch {
+                source.signals.collect { signal ->
+                    handleSignal(signal)
+                }
             }
         }
     }
 
     fun unregister(source: AdNetworkSignalSource) {
-        subscriptionJobs.remove(source)?.cancel()
+        synchronized(subscriptionLock) {
+            subscriptionJobs.remove(source)?.cancel()
+        }
     }
 
     fun stop() {
-        subscriptionJobs.values.forEach { it.cancel() }
-        subscriptionJobs.clear()
+        synchronized(subscriptionLock) {
+            subscriptionJobs.values.forEach { it.cancel() }
+            subscriptionJobs.clear()
+        }
     }
 
     /**
@@ -53,7 +61,7 @@ internal class SignalAggregator(
     }
 
     private suspend fun handleSignal(signal: AdNetworkSignal) {
-        mutex.withLock {
+        eventMutex.withLock {
             when (signal) {
                 is AdNetworkSignal.NetworkEnvironment -> latestEnvironment = signal
                 else -> events.addLast(signal)
@@ -65,9 +73,9 @@ internal class SignalAggregator(
 
     private fun purgeOldEvents(now: Long) {
         val threshold = now - windowDurationMs
-        while (events.isNotEmpty() && events.first().timestamp < threshold) {
-            events.removeFirst()
-        }
+        // removeAll handles out-of-order timestamps (multiple sources, different clocks)
+        // without leaving stale events in the middle of the deque.
+        events.removeAll { it.timestamp < threshold }
     }
 
     private fun computeSnapshot(): AggregateSnapshot {
