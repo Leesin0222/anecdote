@@ -1,0 +1,74 @@
+name: Dependabot auto-merge
+
+# Automatically approves and enables auto-merge for Dependabot pull requests
+# that are limited to patch / minor version bumps (or any GitHub Actions
+# update). Major bumps are intentionally left for manual review so a
+# breaking change doesn't slip in unnoticed.
+#
+# Auto-merge waits for the required status checks (the `build` job in
+# ci.yml) to pass before actually merging — the merge is only enabled,
+# not forced. If CI fails, the PR stays open for inspection.
+#
+# Prerequisite (one-time): in repository Settings → General → "Pull
+# Requests", make sure "Allow auto-merge" is enabled. Without that
+# checkbox, `gh pr merge --auto` will error out.
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dependabot:
+    name: Auto-merge safe Dependabot updates
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
+
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Two safe categories:
+      #   1. patch / minor bumps for any Gradle dependency (the bulk of
+      #      Dependabot traffic)
+      #   2. any GitHub Actions update — CI failing on a bad Action version
+      #      surfaces in this same workflow, and Actions tend to follow
+      #      strict semver
+      - name: Approve safe updates
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+          steps.metadata.outputs.package-ecosystem == 'github_actions'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr review --approve "$PR_URL" \
+            --body "Auto-approved by dependabot-auto-merge workflow — update type ${UPDATE_TYPE} in ${ECOSYSTEM}."
+
+      - name: Enable auto-merge for safe updates
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+          steps.metadata.outputs.package-ecosystem == 'github_actions'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge --auto --squash "$PR_URL"
+
+      - name: Flag major updates for manual review
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          DEPS: ${{ steps.metadata.outputs.dependency-names }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "$PR_URL" \
+            --body "Major version bump detected for ${DEPS}. Auto-merge is intentionally skipped — please review the upstream changelog and merge manually if the migration looks clean."
