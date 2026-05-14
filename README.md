@@ -10,7 +10,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Android minSdk](https://img.shields.io/badge/Android-min%20SDK%2024-3DDC84?logo=android&logoColor=white)](https://developer.android.com)
 
-**English** · [한국어](README.ko.md)
+**English** · [한국어](README.ko.md) · [日本語](README.ja.md)
 
 ## Overview
 
