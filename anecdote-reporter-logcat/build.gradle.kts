@@ -1,5 +1,6 @@
 plugins {
     id("anecdote.android.library")
+    id("anecdote.android.publish")
 }
 
 android {
