@@ -18,7 +18,8 @@ internal fun BlockState.toFirebaseParams(): Map<String, Any> = buildMap {
             put(PARAM_SIGNAL_COUNT, signals.size.toLong())
         }
         BlockState.NotBlocked,
-        BlockState.Unknown -> Unit
+        BlockState.Unknown,
+        -> Unit
     }
 }
 
@@ -61,7 +62,7 @@ internal fun Map<String, Any>.toBundle(): Bundle {
             is Int -> bundle.putLong(key, value.toLong())
             is Boolean -> bundle.putLong(key, if (value) 1L else 0L)
             else -> error(
-                "Unsupported Firebase param type for key '$key': ${value::class.simpleName}"
+                "Unsupported Firebase param type for key '$key': ${value::class.simpleName}",
             )
         }
     }

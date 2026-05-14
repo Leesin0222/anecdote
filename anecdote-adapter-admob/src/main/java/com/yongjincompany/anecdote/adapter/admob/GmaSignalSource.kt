@@ -129,7 +129,7 @@ public class GmaSignalSource @JvmOverloads public constructor(
             AdNetworkSignal.LoadSucceeded(
                 networkId = networkId,
                 timestamp = now,
-            )
+            ),
         )
         emitAdapterSignals(responseInfo, now)
     }
@@ -144,7 +144,7 @@ public class GmaSignalSource @JvmOverloads public constructor(
                 errorType = error.toAnecdoteErrorType(),
                 rawErrorCode = error.code,
                 rawErrorMessage = error.message,
-            )
+            ),
         )
         emitAdapterSignals(error.responseInfo, now)
     }
@@ -160,7 +160,7 @@ public class GmaSignalSource @JvmOverloads public constructor(
                     AdNetworkSignal.LoadSucceeded(
                         networkId = mediatedId,
                         timestamp = timestamp,
-                    )
+                    ),
                 )
             } else {
                 _signals.tryEmit(
@@ -170,7 +170,7 @@ public class GmaSignalSource @JvmOverloads public constructor(
                         errorType = adapterError.toAnecdoteErrorType(),
                         rawErrorCode = adapterError.code,
                         rawErrorMessage = adapterError.message,
-                    )
+                    ),
                 )
             }
         }

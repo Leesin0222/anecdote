@@ -1,14 +1,13 @@
 package com.yongjincompany.anecdote.internal
 
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.io.IOException
-import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.Response
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -40,7 +39,9 @@ internal class OkHttpReachabilityChecker(
                     latencyMs = clock.now() - start,
                 )
             }
-        } catch (e: IOException) {
+        } catch (ignored: IOException) {
+            // Any transport-level failure is by definition an "unreachable" probe result;
+            // the exception itself carries no additional value beyond that signal.
             HttpReachabilityResult(reachable = false, latencyMs = null)
         }
     }
