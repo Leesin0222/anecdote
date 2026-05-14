@@ -24,8 +24,14 @@ class BlockStateEvaluatorTest {
     fun `disabled region MCC returns Unknown regardless of signals`() {
         val evaluator = BlockStateEvaluator(defaultPolicy)
         val snap = AggregateSnapshot.EMPTY.copy(
-            probe = ProbeStats(adAttempts = 10, adFailures = 10, adFailureRate = 1.0,
-                controlAttempts = 10, controlFailures = 0, controlFailureRate = 0.0),
+            probe = ProbeStats(
+                adAttempts = 10,
+                adFailures = 10,
+                adFailureRate = 1.0,
+                controlAttempts = 10,
+                controlFailures = 0,
+                controlFailureRate = 0.0,
+            ),
             environment = EnvironmentStats(false, false, null, mcc = 460),
         )
         val result = evaluator.evaluate(snap)
@@ -36,8 +42,14 @@ class BlockStateEvaluatorTest {
     fun `all probes reachable yields NotBlocked`() {
         val evaluator = BlockStateEvaluator(defaultPolicy)
         val snap = AggregateSnapshot.EMPTY.copy(
-            probe = ProbeStats(adAttempts = 10, adFailures = 0, adFailureRate = 0.0,
-                controlAttempts = 10, controlFailures = 0, controlFailureRate = 0.0),
+            probe = ProbeStats(
+                adAttempts = 10,
+                adFailures = 0,
+                adFailureRate = 0.0,
+                controlAttempts = 10,
+                controlFailures = 0,
+                controlFailureRate = 0.0,
+            ),
         )
         val result = evaluator.evaluate(snap)
         assertEquals(BlockState.NotBlocked, result)
@@ -47,8 +59,14 @@ class BlockStateEvaluatorTest {
     fun `ad failures with control success yields Blocked`() {
         val evaluator = BlockStateEvaluator(defaultPolicy)
         val snap = AggregateSnapshot.EMPTY.copy(
-            probe = ProbeStats(adAttempts = 10, adFailures = 10, adFailureRate = 1.0,
-                controlAttempts = 10, controlFailures = 0, controlFailureRate = 0.0),
+            probe = ProbeStats(
+                adAttempts = 10,
+                adFailures = 10,
+                adFailureRate = 1.0,
+                controlAttempts = 10,
+                controlFailures = 0,
+                controlFailureRate = 0.0,
+            ),
             recentSignals = listOf(sampleProbe()),
         )
         val result = evaluator.evaluate(snap)
@@ -59,8 +77,14 @@ class BlockStateEvaluatorTest {
     fun `ad and control both fail yields NotBlocked (network failure)`() {
         val evaluator = BlockStateEvaluator(defaultPolicy)
         val snap = AggregateSnapshot.EMPTY.copy(
-            probe = ProbeStats(adAttempts = 10, adFailures = 10, adFailureRate = 1.0,
-                controlAttempts = 10, controlFailures = 10, controlFailureRate = 1.0),
+            probe = ProbeStats(
+                adAttempts = 10,
+                adFailures = 10,
+                adFailureRate = 1.0,
+                controlAttempts = 10,
+                controlFailures = 10,
+                controlFailureRate = 1.0,
+            ),
         )
         val result = evaluator.evaluate(snap)
         assertEquals(BlockState.NotBlocked, result)
@@ -71,10 +95,20 @@ class BlockStateEvaluatorTest {
         val evaluator = BlockStateEvaluator(defaultPolicy)
         // ad delta 0.4 × 80 = 32, + vpn 10 = 42 → Suspected (threshold 40)
         val snap = AggregateSnapshot.EMPTY.copy(
-            probe = ProbeStats(adAttempts = 10, adFailures = 4, adFailureRate = 0.4,
-                controlAttempts = 10, controlFailures = 0, controlFailureRate = 0.0),
-            environment = EnvironmentStats(vpnActive = true, privateDnsActive = false,
-                privateDnsServer = null, mcc = null),
+            probe = ProbeStats(
+                adAttempts = 10,
+                adFailures = 4,
+                adFailureRate = 0.4,
+                controlAttempts = 10,
+                controlFailures = 0,
+                controlFailureRate = 0.0,
+            ),
+            environment = EnvironmentStats(
+                vpnActive = true,
+                privateDnsActive = false,
+                privateDnsServer = null,
+                mcc = null,
+            ),
         )
         val result = evaluator.evaluate(snap)
         assertTrue("expected Suspected, got $result", result is BlockState.Suspected)
@@ -84,8 +118,14 @@ class BlockStateEvaluatorTest {
     fun `confidence low for small sample size`() {
         val evaluator = BlockStateEvaluator(defaultPolicy)
         val snap = AggregateSnapshot.EMPTY.copy(
-            probe = ProbeStats(adAttempts = 2, adFailures = 2, adFailureRate = 1.0,
-                controlAttempts = 1, controlFailures = 0, controlFailureRate = 0.0),
+            probe = ProbeStats(
+                adAttempts = 2,
+                adFailures = 2,
+                adFailureRate = 1.0,
+                controlAttempts = 1,
+                controlFailures = 0,
+                controlFailureRate = 0.0,
+            ),
         )
         val result = evaluator.evaluate(snap)
         assertNotNull(result)
@@ -101,8 +141,14 @@ class BlockStateEvaluatorTest {
     fun `confidence high for large sample size`() {
         val evaluator = BlockStateEvaluator(defaultPolicy)
         val snap = AggregateSnapshot.EMPTY.copy(
-            probe = ProbeStats(adAttempts = 30, adFailures = 30, adFailureRate = 1.0,
-                controlAttempts = 30, controlFailures = 0, controlFailureRate = 0.0),
+            probe = ProbeStats(
+                adAttempts = 30,
+                adFailures = 30,
+                adFailureRate = 1.0,
+                controlAttempts = 30,
+                controlFailures = 0,
+                controlFailureRate = 0.0,
+            ),
         )
         val result = evaluator.evaluate(snap) as BlockState.Blocked
         assertEquals(Confidence.HIGH, result.confidence)

@@ -109,10 +109,12 @@ class GmaSignalSourceTest {
     fun `adListener uses responseInfoProvider on success to expand mediation chain`() = runTest {
         val ri = responseInfo(
             listOf(
-                adapterResponse("com.google.ads.mediation.applovin.AppLovinMediationAdapter",
-                    error = adError(AdRequest.ERROR_CODE_NO_FILL)),
+                adapterResponse(
+                    "com.google.ads.mediation.applovin.AppLovinMediationAdapter",
+                    error = adError(AdRequest.ERROR_CODE_NO_FILL),
+                ),
                 adapterResponse("com.google.ads.mediation.unity.UnityMediationAdapter", error = null),
-            )
+            ),
         )
         val source = GmaSignalSource()
         val listener = source.adListener(responseInfoProvider = { ri })
@@ -133,10 +135,12 @@ class GmaSignalSourceTest {
     fun `interstitialLoadCallback expands mediation chain on success`() = runTest {
         val ri = responseInfo(
             listOf(
-                adapterResponse("com.google.ads.mediation.ironsource.IronSourceMediationAdapter",
-                    error = adError(AdRequest.ERROR_CODE_NETWORK_ERROR)),
+                adapterResponse(
+                    "com.google.ads.mediation.ironsource.IronSourceMediationAdapter",
+                    error = adError(AdRequest.ERROR_CODE_NETWORK_ERROR),
+                ),
                 adapterResponse("com.google.ads.mediation.applovin.AppLovinMediationAdapter", error = null),
-            )
+            ),
         )
         val ad = mockk<InterstitialAd> {
             every { responseInfo } returns ri
@@ -160,11 +164,15 @@ class GmaSignalSourceTest {
     fun `onAdFailedToLoad expands mediation chain from LoadAdError responseInfo`() = runTest {
         val ri = responseInfo(
             listOf(
-                adapterResponse("com.google.ads.mediation.applovin.AppLovinMediationAdapter",
-                    error = adError(AdRequest.ERROR_CODE_NO_FILL)),
-                adapterResponse("com.google.ads.mediation.unity.UnityMediationAdapter",
-                    error = adError(AdRequest.ERROR_CODE_NETWORK_ERROR)),
-            )
+                adapterResponse(
+                    "com.google.ads.mediation.applovin.AppLovinMediationAdapter",
+                    error = adError(AdRequest.ERROR_CODE_NO_FILL),
+                ),
+                adapterResponse(
+                    "com.google.ads.mediation.unity.UnityMediationAdapter",
+                    error = adError(AdRequest.ERROR_CODE_NETWORK_ERROR),
+                ),
+            ),
         )
         val error = loadAdError(
             code = AdRequest.ERROR_CODE_NO_FILL,
@@ -192,7 +200,7 @@ class GmaSignalSourceTest {
         val ri = responseInfo(
             listOf(
                 adapterResponse("com.google.android.gms.ads.mediation.admob.AdMobAdapter", error = null),
-            )
+            ),
         )
         val ad = mockk<InterstitialAd> {
             every { responseInfo } returns ri
@@ -285,9 +293,11 @@ class GmaSignalSourceTest {
         val consentChecker = ConsentChecker { true }
         val ri = responseInfo(
             listOf(
-                adapterResponse("com.google.ads.mediation.applovin.AppLovinMediationAdapter",
-                    error = adError(AdRequest.ERROR_CODE_NO_FILL)),
-            )
+                adapterResponse(
+                    "com.google.ads.mediation.applovin.AppLovinMediationAdapter",
+                    error = adError(AdRequest.ERROR_CODE_NO_FILL),
+                ),
+            ),
         )
         val error = loadAdError(AdRequest.ERROR_CODE_NO_FILL, responseInfo = ri)
         val source = GmaSignalSource(consentChecker = consentChecker)

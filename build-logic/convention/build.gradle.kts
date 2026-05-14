@@ -12,6 +12,8 @@ java {
 dependencies {
     compileOnly(libs.android.gradle.plugin)
     compileOnly(libs.kotlin.gradle.plugin)
+    compileOnly(libs.ktlint.gradle.plugin)
+    compileOnly(libs.detekt.gradle.plugin)
 }
 
 gradlePlugin {
@@ -23,6 +25,14 @@ gradlePlugin {
         register("anecdoteAndroidApplication") {
             id = "anecdote.android.application"
             implementationClass = "AnecdoteAndroidApplicationConventionPlugin"
+        }
+        register("anecdotePublishing") {
+            id = "anecdote.android.publish"
+            implementationClass = "AnecdotePublishingConventionPlugin"
+        }
+        register("anecdoteQuality") {
+            id = "anecdote.quality"
+            implementationClass = "AnecdoteQualityConventionPlugin"
         }
     }
 }

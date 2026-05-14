@@ -76,7 +76,7 @@ public class CustomSignalSource(
             errorType = errorType,
             rawErrorCode = rawErrorCode,
             rawErrorMessage = rawErrorMessage,
-        )
+        ),
     )
 
     /** Record a successful ad load. */
@@ -84,7 +84,7 @@ public class CustomSignalSource(
         AdNetworkSignal.LoadSucceeded(
             networkId = networkId,
             timestamp = System.currentTimeMillis(),
-        )
+        ),
     )
 
     public companion object {

@@ -101,6 +101,13 @@ InterstitialAd.load(ctx, unitId, request, gmaSource.interstitialLoadCallback())
 RewardedAd.load(ctx, unitId, request, gmaSource.rewardedLoadCallback())
 ```
 
+> **Requirement**: your app must already depend on
+> `com.google.android.gms:play-services-ads`. The adapter declares the GMA
+> SDK as `compileOnly`, so adding `anecdote-adapter-admob` will not pull
+> in (or override) any version of the ad SDK that your app is already
+> using — this is what keeps the adapter compatible with hosts that ship
+> their own ad stack, mediation setup, or lite/full GMA variants.
+
 ### Policy tuning
 
 ```kotlin

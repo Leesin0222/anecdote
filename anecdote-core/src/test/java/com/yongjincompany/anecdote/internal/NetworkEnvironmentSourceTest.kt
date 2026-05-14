@@ -62,7 +62,7 @@ class NetworkEnvironmentSourceTest {
             listOf(
                 NetworkEnvironmentSnapshot(false, false, null, null),
                 NetworkEnvironmentSnapshot(true, true, "dns.example", 460),
-            )
+            ),
         )
         val registrar = FakeRegistrar()
         val source = NetworkEnvironmentSource(

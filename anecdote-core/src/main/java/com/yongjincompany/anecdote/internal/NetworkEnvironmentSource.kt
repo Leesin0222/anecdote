@@ -66,7 +66,7 @@ internal class NetworkEnvironmentSource(
                 privateDnsActive = snap.privateDnsActive,
                 privateDnsServer = snap.privateDnsServer,
                 mcc = snap.mcc,
-            )
+            ),
         )
     }
 }

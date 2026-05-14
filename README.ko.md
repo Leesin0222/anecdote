@@ -101,6 +101,12 @@ InterstitialAd.load(ctx, unitId, request, gmaSource.interstitialLoadCallback())
 RewardedAd.load(ctx, unitId, request, gmaSource.rewardedLoadCallback())
 ```
 
+> **필수 조건**: 호스트 앱이 이미 `com.google.android.gms:play-services-ads`에
+> 의존하고 있어야 합니다. 어댑터는 GMA SDK를 `compileOnly`로 선언하기 때문에,
+> `anecdote-adapter-admob`을 추가해도 호스트 앱이 사용 중인 광고 SDK 버전을
+> 끌어오거나 덮어쓰지 않습니다 — 호스트가 자체 광고 스택·미디에이션 구성·
+> lite/full GMA 변형 중 무엇을 쓰든 어댑터가 안전하게 붙도록 하는 장치입니다.
+
 ### 정책 튜닝
 
 ```kotlin

@@ -10,6 +10,7 @@ class AnecdoteAndroidApplicationConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         with(target) {
             pluginManager.apply("com.android.application")
+            pluginManager.apply("anecdote.quality")
             // Kotlin plugin is applied via each module's own plugins block
 
             extensions.configure<ApplicationExtension> {

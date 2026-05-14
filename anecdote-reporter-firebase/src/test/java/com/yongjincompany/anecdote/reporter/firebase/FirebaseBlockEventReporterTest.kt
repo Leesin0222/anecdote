@@ -86,7 +86,7 @@ class FirebaseBlockEventReporterTest {
         reporter.onSignalReceived(AdNetworkSignal.LoadSucceeded("admob", 1L))
         reporter.onSignalReceived(AdNetworkSignal.ProbeResult("probe", 1L, "ad.example", false, true, 10L))
         reporter.onSignalReceived(
-            AdNetworkSignal.NetworkEnvironment("env", 1L, false, false, null, null)
+            AdNetworkSignal.NetworkEnvironment("env", 1L, false, false, null, null),
         )
 
         verify(exactly = 3) { analytics.logEvent(EVENT_SIGNAL, any()) }
