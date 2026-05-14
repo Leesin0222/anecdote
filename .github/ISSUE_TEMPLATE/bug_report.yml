@@ -1,0 +1,98 @@
+name: Bug report
+description: Report something that doesn't behave the way it should.
+title: "[Bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please fill in as much as you can —
+        reproduction steps and `BlockState` / signal logs are the most useful.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: A clear and concise description of the bug.
+      placeholder: "Detector stays Unknown forever when ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps that consistently trigger the bug. A small repro project link is ideal.
+      placeholder: |
+        1. Build detector with ...
+        2. Call start()
+        3. Observe state
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happens. Include `BlockState` transitions if relevant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / signals
+      description: |
+        Output from `LogcatBlockEventReporter` or any `onSignalReceived` traces.
+        Wrap with triple backticks for readability.
+      render: shell
+
+  - type: input
+    id: sdk-version
+    attributes:
+      label: anecdote version
+      placeholder: "0.1.1"
+    validations:
+      required: true
+
+  - type: input
+    id: android-version
+    attributes:
+      label: Android version / API level
+      placeholder: "Android 14 (API 34)"
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device / emulator
+      placeholder: "Pixel 7, Pixel emulator API 34, ..."
+
+  - type: dropdown
+    id: modules
+    attributes:
+      label: Affected modules
+      multiple: true
+      options:
+        - anecdote-core
+        - anecdote-adapter-admob
+        - anecdote-reporter-firebase
+        - anecdote-reporter-logcat
+        - sample app
+        - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Network environment, VPN/Private DNS state, ad SDK setup, etc.

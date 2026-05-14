@@ -1,0 +1,54 @@
+name: Feature request
+description: Suggest a new capability, adapter, reporter, or signal source.
+title: "[Feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, please check whether the use case can already be expressed
+        via `CustomSignalSource` or a custom `BlockEventReporter`.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user-facing or integration problem are you trying to solve?
+      placeholder: "When integrating with AppLovin MAX, I want ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: API shape, signal weight, configuration knob, etc.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What did you try first, and why didn't it fit?
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      multiple: true
+      options:
+        - core detector / scoring
+        - new adapter (specify ad SDK)
+        - new reporter (specify backend)
+        - signal source API
+        - configuration / public API
+        - documentation
+        - tooling / build
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context

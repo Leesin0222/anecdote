@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & discussion
+    url: https://github.com/Leesin0222/anecdote/discussions
+    about: Use Discussions for usage questions, integration help, or general feedback.
