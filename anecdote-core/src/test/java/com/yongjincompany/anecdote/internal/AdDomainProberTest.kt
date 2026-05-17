@@ -19,12 +19,16 @@ class AdDomainProberTest {
     private fun probeConfig(
         adDomains: List<String> = listOf("ad1.example", "ad2.example"),
         controlDomains: List<String> = listOf("ctrl.example"),
-        intervalMs: Long = 60_000L,
+        intervalSequenceMs: List<Long> = listOf(60_000L),
     ): ProbeConfig = ProbeConfig.Builder().apply {
         this.adDomains = adDomains
         this.controlDomains = controlDomains
-        this.intervalMs = intervalMs
+        this.intervalSequenceMs = intervalSequenceMs
     }.build()
+
+    private fun resolvingDns(): DnsReachabilityChecker = DnsReachabilityChecker { _ ->
+        DnsResolution(resolved = true, allSinkholed = false, lookupSucceeded = true)
+    }
 
     @Test
     fun `runProbeCycle emits one signal per ad and control domain`() = runTest {
@@ -38,6 +42,7 @@ class AdDomainProberTest {
             config = probeConfig(),
             checker = checker,
             scope = backgroundScope,
+            dnsChecker = resolvingDns(),
             clock = fixedClock,
         )
 
@@ -67,6 +72,34 @@ class AdDomainProberTest {
     }
 
     @Test
+    fun `dns block short-circuits HTTP probe`() = runTest {
+        var httpCalls = 0
+        val checker = HttpReachabilityChecker {
+            httpCalls++
+            HttpReachabilityResult(true, 10)
+        }
+        // DNS reports NXDOMAIN/sinkhole for every host.
+        val dns = DnsReachabilityChecker { _ ->
+            DnsResolution(resolved = false, allSinkholed = true, lookupSucceeded = true)
+        }
+        val prober = AdDomainProber(
+            config = probeConfig(),
+            checker = checker,
+            scope = backgroundScope,
+            dnsChecker = dns,
+            clock = fixedClock,
+        )
+
+        prober.signals.test {
+            prober.runProbeCycle()
+            val emitted = List(3) { awaitItem() as AdNetworkSignal.ProbeResult }
+            assertTrue("all probes must be marked unreachable", emitted.all { !it.reachable })
+            assertTrue("latency must be null when DNS short-circuits", emitted.all { it.latencyMs == null })
+        }
+        assertEquals("HTTP must never be invoked when DNS already says no", 0, httpCalls)
+    }
+
+    @Test
     fun `start launches periodic cycles and stop cancels them`() = runTest {
         var callCount = 0
         val checker = HttpReachabilityChecker {
@@ -74,9 +107,10 @@ class AdDomainProberTest {
             HttpReachabilityResult(true, 5)
         }
         val prober = AdDomainProber(
-            config = probeConfig(intervalMs = 1_000L),
+            config = probeConfig(intervalSequenceMs = listOf(1_000L)),
             checker = checker,
             scope = backgroundScope,
+            dnsChecker = resolvingDns(),
             clock = fixedClock,
         )
 
@@ -95,6 +129,72 @@ class AdDomainProberTest {
     }
 
     @Test
+    fun `adaptive interval walks through sequence and pins at last`() = runTest {
+        var callCount = 0
+        val checker = HttpReachabilityChecker {
+            callCount++
+            HttpReachabilityResult(true, 5)
+        }
+        val prober = AdDomainProber(
+            config = probeConfig(intervalSequenceMs = listOf(100L, 200L, 400L)),
+            checker = checker,
+            scope = backgroundScope,
+            dnsChecker = resolvingDns(),
+            clock = fixedClock,
+        )
+
+        prober.start()
+        testScheduler.runCurrent()
+        // Cycle 0: 3 calls
+        assertEquals(3, callCount)
+
+        testScheduler.advanceTimeBy(100L)
+        testScheduler.runCurrent()
+        assertEquals(6, callCount) // cycle 1
+
+        testScheduler.advanceTimeBy(200L)
+        testScheduler.runCurrent()
+        assertEquals(9, callCount) // cycle 2
+
+        testScheduler.advanceTimeBy(400L)
+        testScheduler.runCurrent()
+        assertEquals(12, callCount) // cycle 3 (pinned at 400ms)
+
+        testScheduler.advanceTimeBy(400L)
+        testScheduler.runCurrent()
+        assertEquals(15, callCount) // cycle 4 (still pinned)
+    }
+
+    @Test
+    fun `resetSchedule jumps back to head and wakes the loop early`() = runTest {
+        var callCount = 0
+        val checker = HttpReachabilityChecker {
+            callCount++
+            HttpReachabilityResult(true, 5)
+        }
+        val prober = AdDomainProber(
+            config = probeConfig(intervalSequenceMs = listOf(100L, 10_000L)),
+            checker = checker,
+            scope = backgroundScope,
+            dnsChecker = resolvingDns(),
+            clock = fixedClock,
+        )
+
+        prober.start()
+        testScheduler.runCurrent()
+        assertEquals(3, callCount) // cycle 0
+
+        testScheduler.advanceTimeBy(100L)
+        testScheduler.runCurrent()
+        assertEquals(6, callCount) // cycle 1 — next delay would be 10s
+
+        // Without reset, no new cycle should happen for 10 seconds. Reset should fire one right away.
+        prober.resetSchedule()
+        testScheduler.runCurrent()
+        assertEquals(9, callCount) // cycle 2 triggered by wakeup
+    }
+
+    @Test
     fun `checker throwing non-IOException does not kill probe loop`() = runTest {
         var failedCycles = 0
         var successCycles = 0
@@ -107,20 +207,19 @@ class AdDomainProberTest {
             HttpReachabilityResult(true, 10)
         }
         val prober = AdDomainProber(
-            config = probeConfig(intervalMs = 1_000L),
+            config = probeConfig(intervalSequenceMs = listOf(1_000L)),
             checker = checker,
             scope = backgroundScope,
+            dnsChecker = resolvingDns(),
             clock = fixedClock,
         )
 
         prober.start()
         testScheduler.runCurrent()
-        // First cycle: one domain throws → should produce failure result, not crash loop
         val firstBurst = successCycles
 
         testScheduler.advanceTimeBy(1_000L)
         testScheduler.runCurrent()
-        // Second cycle still runs → callback fired for all 3 domains
         assertTrue("loop must keep running after transient throw; successCycles=$successCycles", successCycles > firstBurst)
     }
 

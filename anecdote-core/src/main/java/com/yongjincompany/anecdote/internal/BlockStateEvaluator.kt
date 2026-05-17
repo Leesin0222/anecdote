@@ -3,27 +3,14 @@ package com.yongjincompany.anecdote.internal
 import com.yongjincompany.anecdote.BlockState
 import com.yongjincompany.anecdote.Confidence
 import com.yongjincompany.anecdote.config.PolicyConfig
-
-internal data class SignalWeights(
-    val probeDeltaWeight: Double,
-    val loadFailureWeight: Double,
-    val vpnBonus: Double,
-    val privateDnsBonus: Double,
-) {
-    companion object {
-        val DEFAULT = SignalWeights(
-            probeDeltaWeight = 80.0,
-            loadFailureWeight = 60.0,
-            vpnBonus = 10.0,
-            privateDnsBonus = 15.0,
-        )
-    }
-}
+import com.yongjincompany.anecdote.config.SignalWeights
 
 internal class BlockStateEvaluator(
     private val policy: PolicyConfig,
-    private val weights: SignalWeights = SignalWeights.DEFAULT,
+    private val extraAdBlockerDnsSuffixes: Set<String> = emptySet(),
 ) {
+    private val weights: SignalWeights = policy.weights
+
 
     fun evaluate(snapshot: AggregateSnapshot): BlockState {
         snapshot.environment?.mcc?.let { mcc ->
@@ -32,7 +19,14 @@ internal class BlockStateEvaluator(
 
         val hasProbeData = snapshot.probe.adAttempts > 0
         val hasLoadData = snapshot.totalLoadAttempts > 0
-        if (!hasProbeData && !hasLoadData) return BlockState.Unknown
+        val hasInstalledBlocker = snapshot.installedAdBlockerPackages.isNotEmpty()
+        val hasKnownDns = snapshot.environment?.let {
+            it.privateDnsActive && matchesKnownAdBlockerDns(it.privateDnsServer)
+        } == true
+
+        if (!hasProbeData && !hasLoadData && !hasInstalledBlocker && !hasKnownDns) {
+            return BlockState.Unknown
+        }
 
         val score = computeScore(snapshot)
         val confidence = computeConfidence(snapshot)
@@ -59,7 +53,16 @@ internal class BlockStateEvaluator(
 
         snapshot.environment?.let { env ->
             if (env.vpnActive) score += weights.vpnBonus
-            if (env.privateDnsActive) score += weights.privateDnsBonus
+            if (env.privateDnsActive) {
+                score += weights.privateDnsBonus
+                if (matchesKnownAdBlockerDns(env.privateDnsServer)) {
+                    score += weights.knownAdBlockerDnsBonus
+                }
+            }
+        }
+
+        if (snapshot.installedAdBlockerPackages.isNotEmpty()) {
+            score += weights.installedAdBlockerBonus
         }
 
         return score.toInt().coerceIn(0, 100)
@@ -69,12 +72,20 @@ internal class BlockStateEvaluator(
         val sampleSize = snapshot.probe.adAttempts +
             snapshot.probe.controlAttempts +
             snapshot.totalLoadAttempts
+        val hasStrongAmbientSignal = snapshot.installedAdBlockerPackages.isNotEmpty() ||
+            (snapshot.environment?.privateDnsActive == true &&
+                matchesKnownAdBlockerDns(snapshot.environment.privateDnsServer))
         return when {
+            // A strong ambient signal alone is enough for HIGH confidence even without probe data.
+            hasStrongAmbientSignal && sampleSize < THRESHOLD_MEDIUM -> Confidence.HIGH
             sampleSize < THRESHOLD_LOW -> Confidence.LOW
             sampleSize < THRESHOLD_MEDIUM -> Confidence.MEDIUM
             else -> Confidence.HIGH
         }
     }
+
+    private fun matchesKnownAdBlockerDns(server: String?): Boolean =
+        AdBlockerDnsRegistry.looksLikeAdBlocker(server, extraAdBlockerDnsSuffixes)
 
     private companion object {
         const val THRESHOLD_LOW = 5

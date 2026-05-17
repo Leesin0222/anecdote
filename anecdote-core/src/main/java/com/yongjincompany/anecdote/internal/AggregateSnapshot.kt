@@ -32,6 +32,7 @@ internal data class AggregateSnapshot(
     val networks: Map<String, NetworkStats>,
     val probe: ProbeStats,
     val environment: EnvironmentStats?,
+    val installedAdBlockerPackages: Set<String>,
     val recentSignals: List<AdNetworkSignal>,
 ) {
     val totalLoadAttempts: Int get() = networks.values.sumOf { it.loadAttempts }
@@ -41,6 +42,7 @@ internal data class AggregateSnapshot(
             networks = emptyMap(),
             probe = ProbeStats(0, 0, 0.0, 0, 0, 0.0),
             environment = null,
+            installedAdBlockerPackages = emptySet(),
             recentSignals = emptyList(),
         )
     }

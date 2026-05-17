@@ -42,4 +42,14 @@ public sealed class AdNetworkSignal {
             public const val NETWORK_ID: String = "env"
         }
     }
+
+    public data class InstalledAdBlockers(
+        override val networkId: String,
+        override val timestamp: Long,
+        val packages: Set<String>,
+    ) : AdNetworkSignal() {
+        public companion object {
+            public const val NETWORK_ID: String = "installed_blockers"
+        }
+    }
 }

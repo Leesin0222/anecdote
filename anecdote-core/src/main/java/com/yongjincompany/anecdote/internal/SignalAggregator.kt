@@ -24,6 +24,7 @@ internal class SignalAggregator(
     // Guarded by eventMutex
     private val events: ArrayDeque<AdNetworkSignal> = ArrayDeque()
     private var latestEnvironment: AdNetworkSignal.NetworkEnvironment? = null
+    private var latestInstalledAdBlockers: AdNetworkSignal.InstalledAdBlockers? = null
 
     private val _snapshot = MutableStateFlow(AggregateSnapshot.EMPTY)
     val snapshot: StateFlow<AggregateSnapshot> = _snapshot.asStateFlow()
@@ -64,6 +65,7 @@ internal class SignalAggregator(
         eventMutex.withLock {
             when (signal) {
                 is AdNetworkSignal.NetworkEnvironment -> latestEnvironment = signal
+                is AdNetworkSignal.InstalledAdBlockers -> latestInstalledAdBlockers = signal
                 else -> events.addLast(signal)
             }
             purgeOldEvents(clock.now())
@@ -121,11 +123,15 @@ internal class SignalAggregator(
             )
         }
 
+        val installedBlockers = latestInstalledAdBlockers?.packages ?: emptySet()
+
         return AggregateSnapshot(
             networks = networks,
             probe = probe,
             environment = env,
-            recentSignals = events.toList() + listOfNotNull(latestEnvironment),
+            installedAdBlockerPackages = installedBlockers,
+            recentSignals = events.toList() +
+                listOfNotNull(latestEnvironment, latestInstalledAdBlockers),
         )
     }
 

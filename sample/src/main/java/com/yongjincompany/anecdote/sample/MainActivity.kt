@@ -160,6 +160,8 @@ private fun SignalRow(signal: AdNetworkSignal) {
             "Probe ${signal.domain} reachable=${signal.reachable} ctrl=${signal.isControl}"
         is AdNetworkSignal.NetworkEnvironment ->
             "Env vpn=${signal.vpnActive} pDns=${signal.privateDnsActive} mcc=${signal.mcc}"
+        is AdNetworkSignal.InstalledAdBlockers ->
+            "InstalledBlockers count=${signal.packages.size}"
     }
     Text(summary, style = MaterialTheme.typography.bodySmall)
 }

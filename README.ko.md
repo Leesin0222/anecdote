@@ -120,12 +120,51 @@ AdBlockDetector.Builder(context)
     .probe {
         timeoutMs = 3_000
         gracePeriodMs = 5_000
-        intervalMs = 60_000
-        // 기본값: pagead2.googlesyndication.com (ad), www.google.com (control)
-        // adDomains = listOf("pagead2.googlesyndication.com", ...)
-        // controlDomains = listOf("www.google.com", "www.gstatic.com")
+        // intervalMs = 60_000             // 고정 간격이 필요할 때
+        // intervalSequenceMs = listOf(...) // 적응형 백오프. 기본 5s→5분 램프
+        // 기본 프로브 대상은 글로벌 모바일 광고망 (AdMob/DoubleClick,
+        // Meta, Unity, AppLovin, ironSource, Pangle).
+        // adDomains = ProbeConfig.DEFAULT_AD_DOMAINS
+        // controlDomains = ProbeConfig.DEFAULT_CONTROL_DOMAINS
     }
     .build()
+```
+
+#### 지역별 광고망 팩
+
+`DEFAULT_AD_DOMAINS`는 글로벌 모바일 광고망만 다루며, 지역 특화 광고망은 무관한 프로빙을 피하기 위해 일부러 제외했습니다. 특정 시장을 타깃팅하는 앱은 팩을 추가로 옵트인할 수 있습니다.
+
+```kotlin
+.probe {
+    adDomains = ProbeConfig.DEFAULT_AD_DOMAINS + ProbeConfig.AdNetworkPacks.KOREA
+}
+```
+
+현재 제공: `KOREA` (Buzzvil, TNK Factory, Adpopcorn, Kakao AdFit, Naver GFA — 앱테크 리워드 앱에서 흔히 사용). 다른 지역 팩 PR을 환영합니다.
+
+#### 광고 차단 레지스트리 확장
+
+빌트인 광고 차단 DNS 제공자/설치 패키지 목록은 SDK를 포크하지 않고도 호출부에서 확장 가능합니다.
+
+```kotlin
+AdBlockDetector.Builder(context)
+    .addAdBlockerDnsSuffix(".my-private-dns.example")       // suffix 매칭
+    .addAdBlockerDnsSuffix("dns.my-specific-blocker.com")   // 정확 매칭
+    .addInstalledAdBlockerPackage("com.example.myblocker")  // AndroidManifest <queries>에도 선언 필요
+    .build()
+```
+
+#### 가중치 튜닝
+
+각 시그널은 [`SignalWeights`](anecdote-core/src/main/java/com/yongjincompany/anecdote/config/SignalWeights.kt)를 통해 0..100 점수에 기여합니다. 기본값은 보수적으로 잡혀 있고, detector별로 오버라이드 가능합니다.
+
+```kotlin
+.policy {
+    weights = SignalWeights.DEFAULT.copy(
+        knownAdBlockerDnsBonus = 80.0,   // Private DNS 매칭 가중치 ↑
+        installedAdBlockerBonus = 30.0,  // 설치 ≠ 활성, 가중치 ↓
+    )
+}
 ```
 
 ### 커스텀 시그널 소스 (비-AdMob 네트워크)

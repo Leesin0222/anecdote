@@ -6,14 +6,18 @@ import com.yongjincompany.anecdote.config.PolicyConfig
 import com.yongjincompany.anecdote.config.ProbeConfig
 import com.yongjincompany.anecdote.internal.AdDomainProber
 import com.yongjincompany.anecdote.internal.AggregateSnapshot
+import com.yongjincompany.anecdote.internal.AndroidInstalledAdBlockerReader
 import com.yongjincompany.anecdote.internal.AndroidNetworkChangeRegistrar
 import com.yongjincompany.anecdote.internal.AndroidNetworkEnvironmentReader
 import com.yongjincompany.anecdote.internal.BlockStateEvaluator
 import com.yongjincompany.anecdote.internal.DetectorGate
+import com.yongjincompany.anecdote.internal.InstalledAdBlockerRegistry
+import com.yongjincompany.anecdote.internal.InstalledAdBlockerSource
 import com.yongjincompany.anecdote.internal.NetworkEnvironmentSource
 import com.yongjincompany.anecdote.internal.OkHttpReachabilityChecker
 import com.yongjincompany.anecdote.internal.SignalAggregator
 import com.yongjincompany.anecdote.report.BlockEventReporter
+import com.yongjincompany.anecdote.signal.AdNetworkSignal
 import com.yongjincompany.anecdote.signal.AdNetworkSignalSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +33,10 @@ public class AdBlockDetector private constructor(
     private val config: DetectorConfig,
 ) {
 
-    private val evaluator = BlockStateEvaluator(config.policyConfig)
+    private val evaluator = BlockStateEvaluator(
+        policy = config.policyConfig,
+        extraAdBlockerDnsSuffixes = config.extraAdBlockerDnsSuffixes,
+    )
     private val gate = DetectorGate(
         gracePeriodMs = config.probeConfig.gracePeriodMs,
         maxEvaluationsPerSession = config.policyConfig.maxEvaluationsPerSession,
@@ -75,9 +82,15 @@ public class AdBlockDetector private constructor(
                 reader = AndroidNetworkEnvironmentReader(config.context),
                 registrar = AndroidNetworkChangeRegistrar(config.context),
             )
+            val installedBlockers = InstalledAdBlockerSource(
+                reader = AndroidInstalledAdBlockerReader(config.context),
+                candidates = InstalledAdBlockerRegistry.PACKAGES +
+                    config.extraInstalledAdBlockerPackages,
+            )
             builtInSources.clear()
             builtInSources += probe
             builtInSources += env
+            builtInSources += installedBlockers
 
             (builtInSources + config.signalSources + dynamicSources).forEach { source ->
                 attachSourceLocked(source, newScope, newAggregator)
@@ -85,6 +98,20 @@ public class AdBlockDetector private constructor(
 
             evaluationJob = newScope.launch {
                 newAggregator.snapshot.collect { snap -> reevaluateInternal(snap) }
+            }
+
+            // Reset probe backoff to the head whenever the network environment changes,
+            // so the SDK converges quickly after VPN/Private-DNS toggles.
+            newScope.launch {
+                var prevSignature: Triple<Boolean, Boolean, String?>? = null
+                env.signals.collect { signal ->
+                    val envSignal = signal as? AdNetworkSignal.NetworkEnvironment ?: return@collect
+                    val sig = Triple(envSignal.vpnActive, envSignal.privateDnsActive, envSignal.privateDnsServer)
+                    if (prevSignature != null && prevSignature != sig) {
+                        probe.resetSchedule()
+                    }
+                    prevSignature = sig
+                }
             }
         }
     }
@@ -177,6 +204,8 @@ public class AdBlockDetector private constructor(
         private var policyConfigBuilder: PolicyConfig.Builder = PolicyConfig.Builder()
         private val reporters: MutableList<BlockEventReporter> = mutableListOf()
         private val signalSources: MutableList<AdNetworkSignalSource> = mutableListOf()
+        private val extraAdBlockerDnsSuffixes: MutableSet<String> = mutableSetOf()
+        private val extraInstalledAdBlockerPackages: MutableSet<String> = mutableSetOf()
 
         public fun probe(block: ProbeConfig.Builder.() -> Unit): Builder = apply {
             probeConfigBuilder.apply(block)
@@ -194,6 +223,32 @@ public class AdBlockDetector private constructor(
             signalSources += source
         }
 
+        /**
+         * Adds a DNS server hostname (or "." suffix pattern) that should be treated as an
+         * ad-blocking provider on top of the built-in registry. Match rules are identical to
+         * the built-ins.
+         */
+        public fun addAdBlockerDnsSuffix(suffix: String): Builder = apply {
+            extraAdBlockerDnsSuffixes += suffix
+        }
+
+        public fun addAdBlockerDnsSuffixes(suffixes: Iterable<String>): Builder = apply {
+            extraAdBlockerDnsSuffixes += suffixes
+        }
+
+        /**
+         * Adds an Android package name to check on top of the built-in installed-blocker
+         * registry. The host app must also declare this package in its AndroidManifest
+         * <queries> for the lookup to succeed on Android 11+.
+         */
+        public fun addInstalledAdBlockerPackage(packageName: String): Builder = apply {
+            extraInstalledAdBlockerPackages += packageName
+        }
+
+        public fun addInstalledAdBlockerPackages(packageNames: Iterable<String>): Builder = apply {
+            extraInstalledAdBlockerPackages += packageNames
+        }
+
         public fun build(): AdBlockDetector {
             val cfg = DetectorConfig(
                 context = context.applicationContext,
@@ -201,6 +256,8 @@ public class AdBlockDetector private constructor(
                 policyConfig = policyConfigBuilder.build(),
                 reporters = reporters.toList(),
                 signalSources = signalSources.toList(),
+                extraAdBlockerDnsSuffixes = extraAdBlockerDnsSuffixes.toSet(),
+                extraInstalledAdBlockerPackages = extraInstalledAdBlockerPackages.toSet(),
             )
             return AdBlockDetector(cfg)
         }

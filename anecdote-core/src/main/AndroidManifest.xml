@@ -2,4 +2,23 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+        Known ad-blocking app package names. Declared here so PackageManager.getPackageInfo()
+        succeeds on Android 11+ without requiring QUERY_ALL_PACKAGES (which Google Play restricts).
+        Kept in sync with InstalledAdBlockerRegistry.PACKAGES.
+    -->
+    <queries>
+        <package android:name="com.adguard.android" />
+        <package android:name="com.adguard.android.contentblocker" />
+        <package android:name="org.blokada.fem.fdroid" />
+        <package android:name="org.blokada.origin.alarm" />
+        <package android:name="org.blokada.alarm.dnschanger" />
+        <package android:name="org.jak_linux.dns66" />
+        <package android:name="dnsfilter.android" />
+        <package android:name="com.frostnerd.smokescreen" />
+        <package android:name="com.frostnerd.dnschanger" />
+        <package android:name="eu.faircode.netguard" />
+        <package android:name="com.celzero.bravedns" />
+    </queries>
 </manifest>

@@ -5,12 +5,14 @@ public class PolicyConfig internal constructor(
     public val thresholdBlocked: Int,
     public val maxEvaluationsPerSession: Int,
     public val disabledRegionMccs: Set<Int>,
+    public val weights: SignalWeights,
 ) {
     public class Builder {
         public var thresholdSuspected: Int = 40
         public var thresholdBlocked: Int = 70
         public var maxEvaluationsPerSession: Int = 3
         public var disabledRegionMccs: Set<Int> = setOf(MCC_CHINA)
+        public var weights: SignalWeights = SignalWeights.DEFAULT
 
         internal fun build(): PolicyConfig {
             require(thresholdSuspected in 0..100) {
@@ -30,6 +32,7 @@ public class PolicyConfig internal constructor(
                 thresholdBlocked = thresholdBlocked,
                 maxEvaluationsPerSession = maxEvaluationsPerSession,
                 disabledRegionMccs = disabledRegionMccs,
+                weights = weights,
             )
         }
     }

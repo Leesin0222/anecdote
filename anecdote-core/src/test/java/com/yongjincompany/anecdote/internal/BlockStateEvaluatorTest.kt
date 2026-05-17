@@ -167,6 +167,133 @@ class BlockStateEvaluatorTest {
         assertTrue("expected Suspected, got $result", result is BlockState.Suspected)
     }
 
+    @Test
+    fun `private DNS pointing at known ad-blocker pushes to Blocked alone`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        // No probe data; just the env signal matching an ad-blocker DNS.
+        // 15 (privateDns) + 60 (known) = 75 → Blocked
+        val snap = AggregateSnapshot.EMPTY.copy(
+            environment = EnvironmentStats(
+                vpnActive = false,
+                privateDnsActive = true,
+                privateDnsServer = "abc123.dns.nextdns.io",
+                mcc = null,
+            ),
+        )
+        val result = evaluator.evaluate(snap)
+        assertTrue("expected Blocked, got $result", result is BlockState.Blocked)
+    }
+
+    @Test
+    fun `unknown private DNS server stays at modest score`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        // Private DNS active but server not in registry → just +15, well below thresholds.
+        val snap = AggregateSnapshot.EMPTY.copy(
+            environment = EnvironmentStats(
+                vpnActive = false,
+                privateDnsActive = true,
+                privateDnsServer = "dns.example.com",
+                mcc = null,
+            ),
+            // Need some probe data for evaluator to not return Unknown.
+            probe = ProbeStats(
+                adAttempts = 3,
+                adFailures = 0,
+                adFailureRate = 0.0,
+                controlAttempts = 3,
+                controlFailures = 0,
+                controlFailureRate = 0.0,
+            ),
+        )
+        val result = evaluator.evaluate(snap)
+        assertEquals(BlockState.NotBlocked, result)
+    }
+
+    @Test
+    fun `installed ad-blocker package alone yields Suspected`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        // 50 points (installed bonus) → between Suspected (40) and Blocked (70).
+        val snap = AggregateSnapshot.EMPTY.copy(
+            installedAdBlockerPackages = setOf("com.adguard.android"),
+        )
+        val result = evaluator.evaluate(snap)
+        assertTrue("expected Suspected, got $result", result is BlockState.Suspected)
+    }
+
+    @Test
+    fun `installed ad-blocker with VPN active stretches into Blocked`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        // 50 (installed) + 10 (vpn) + 15 (privateDns) = 75 → Blocked
+        val snap = AggregateSnapshot.EMPTY.copy(
+            installedAdBlockerPackages = setOf("com.adguard.android"),
+            environment = EnvironmentStats(
+                vpnActive = true,
+                privateDnsActive = true,
+                privateDnsServer = "dns.example.com",
+                mcc = null,
+            ),
+        )
+        val result = evaluator.evaluate(snap)
+        assertTrue("expected Blocked, got $result", result is BlockState.Blocked)
+    }
+
+    @Test
+    fun `extra DNS suffix triggers known-blocker bonus`() {
+        val evaluator = BlockStateEvaluator(
+            policy = defaultPolicy,
+            extraAdBlockerDnsSuffixes = setOf("dns.consumer-custom.example"),
+        )
+        // 15 (privateDns) + 60 (known via extras) = 75 → Blocked
+        val snap = AggregateSnapshot.EMPTY.copy(
+            environment = EnvironmentStats(
+                vpnActive = false,
+                privateDnsActive = true,
+                privateDnsServer = "dns.consumer-custom.example",
+                mcc = null,
+            ),
+        )
+        val result = evaluator.evaluate(snap)
+        assertTrue("expected Blocked, got $result", result is BlockState.Blocked)
+    }
+
+    @Test
+    fun `custom weights override defaults`() {
+        val policyWithLightWeights = com.yongjincompany.anecdote.config.PolicyConfig.Builder().apply {
+            weights = com.yongjincompany.anecdote.config.SignalWeights.DEFAULT.copy(
+                knownAdBlockerDnsBonus = 5.0,
+                privateDnsBonus = 5.0,
+            )
+        }.build()
+        val evaluator = BlockStateEvaluator(policy = policyWithLightWeights)
+        // With light weights, 5 + 5 = 10 → below Suspected threshold 40.
+        val snap = AggregateSnapshot.EMPTY.copy(
+            environment = EnvironmentStats(
+                vpnActive = false,
+                privateDnsActive = true,
+                privateDnsServer = "dns.adguard-dns.com",
+                mcc = null,
+            ),
+        )
+        val result = evaluator.evaluate(snap)
+        assertEquals(BlockState.NotBlocked, result)
+    }
+
+    @Test
+    fun `strong ambient signal yields HIGH confidence without probe samples`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        val snap = AggregateSnapshot.EMPTY.copy(
+            environment = EnvironmentStats(
+                vpnActive = false,
+                privateDnsActive = true,
+                privateDnsServer = "dns.adguard-dns.com",
+                mcc = null,
+            ),
+        )
+        val result = evaluator.evaluate(snap)
+        val confidence = (result as BlockState.Blocked).confidence
+        assertEquals(Confidence.HIGH, confidence)
+    }
+
     private fun sampleProbe() = AdNetworkSignal.ProbeResult(
         networkId = "probe",
         timestamp = 1_000L,

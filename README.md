@@ -121,12 +121,51 @@ AdBlockDetector.Builder(context)
     .probe {
         timeoutMs = 3_000
         gracePeriodMs = 5_000
-        intervalMs = 60_000
-        // defaults: pagead2.googlesyndication.com (ad), www.google.com (control)
-        // adDomains = listOf("pagead2.googlesyndication.com", ...)
-        // controlDomains = listOf("www.google.com", "www.gstatic.com")
+        // intervalMs = 60_000             // optional shortcut for a fixed cadence
+        // intervalSequenceMs = listOf(...) // adaptive backoff; default ramps 5s→5min
+        // Defaults probe the dominant global mobile ad networks
+        // (AdMob/DoubleClick, Meta, Unity, AppLovin, ironSource, Pangle).
+        // adDomains = ProbeConfig.DEFAULT_AD_DOMAINS
+        // controlDomains = ProbeConfig.DEFAULT_CONTROL_DOMAINS
     }
     .build()
+```
+
+#### Regional ad network packs
+
+`DEFAULT_AD_DOMAINS` covers the dominant global mobile ad networks but intentionally excludes region-specific ones to avoid probing irrelevant endpoints. Apps targeting a specific market can opt into additional packs:
+
+```kotlin
+.probe {
+    adDomains = ProbeConfig.DEFAULT_AD_DOMAINS + ProbeConfig.AdNetworkPacks.KOREA
+}
+```
+
+Currently available: `KOREA` (Buzzvil, TNK Factory, Adpopcorn, Kakao AdFit, Naver GFA — common in 앱테크 reward apps). Contributions for additional regions are welcome.
+
+#### Extending the ad-blocker registries
+
+The built-in registry of ad-blocking DNS providers and installed ad-blocker packages can be extended at the call site — no fork needed:
+
+```kotlin
+AdBlockDetector.Builder(context)
+    .addAdBlockerDnsSuffix(".my-private-dns.example")       // suffix pattern
+    .addAdBlockerDnsSuffix("dns.my-specific-blocker.com")   // exact match
+    .addInstalledAdBlockerPackage("com.example.myblocker")  // also list in AndroidManifest <queries>
+    .build()
+```
+
+#### Tuning scoring weights
+
+Each signal contributes to the 0..100 score via [`SignalWeights`](anecdote-core/src/main/java/com/yongjincompany/anecdote/config/SignalWeights.kt). Defaults are tuned conservatively; override per detector:
+
+```kotlin
+.policy {
+    weights = SignalWeights.DEFAULT.copy(
+        knownAdBlockerDnsBonus = 80.0,   // heavier weight for Private-DNS match
+        installedAdBlockerBonus = 30.0,  // lighter — installed ≠ active
+    )
+}
 ```
 
 ### Custom signal source (non-AdMob networks)

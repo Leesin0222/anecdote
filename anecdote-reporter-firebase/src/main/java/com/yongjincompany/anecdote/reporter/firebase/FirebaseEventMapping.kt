@@ -49,6 +49,14 @@ internal fun AdNetworkSignal.toFirebaseParams(): Map<String, Any> = buildMap {
                 ?.let { put(PARAM_PRIVATE_DNS_SERVER, it) }
             mcc?.let { put(PARAM_MCC, it.toLong()) }
         }
+        is AdNetworkSignal.InstalledAdBlockers -> {
+            put(PARAM_INSTALLED_BLOCKER_COUNT, packages.size.toLong())
+            if (packages.isNotEmpty()) {
+                packages.joinToString(separator = ",")
+                    .take(MAX_STRING_VALUE_LENGTH)
+                    .let { put(PARAM_INSTALLED_BLOCKER_PACKAGES, it) }
+            }
+        }
     }
 }
 
@@ -81,6 +89,7 @@ private fun AdNetworkSignal.signalTypeKey(): String = when (this) {
     is AdNetworkSignal.LoadSucceeded -> "load_succeeded"
     is AdNetworkSignal.ProbeResult -> "probe_result"
     is AdNetworkSignal.NetworkEnvironment -> "network_environment"
+    is AdNetworkSignal.InstalledAdBlockers -> "installed_ad_blockers"
 }
 
 // Firebase event names (40 char max, alphanumeric + underscore, leading letter)
@@ -104,3 +113,5 @@ internal const val PARAM_VPN_ACTIVE = "vpn_active"
 internal const val PARAM_PRIVATE_DNS_ACTIVE = "private_dns_active"
 internal const val PARAM_PRIVATE_DNS_SERVER = "private_dns_server"
 internal const val PARAM_MCC = "mcc"
+internal const val PARAM_INSTALLED_BLOCKER_COUNT = "installed_blocker_count"
+internal const val PARAM_INSTALLED_BLOCKER_PACKAGES = "installed_blocker_packages"
