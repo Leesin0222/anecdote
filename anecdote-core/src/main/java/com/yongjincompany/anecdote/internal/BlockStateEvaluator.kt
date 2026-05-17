@@ -11,7 +11,6 @@ internal class BlockStateEvaluator(
 ) {
     private val weights: SignalWeights = policy.weights
 
-
     fun evaluate(snapshot: AggregateSnapshot): BlockState {
         snapshot.environment?.mcc?.let { mcc ->
             if (mcc in policy.disabledRegionMccs) return BlockState.Unknown
@@ -72,9 +71,9 @@ internal class BlockStateEvaluator(
         val sampleSize = snapshot.probe.adAttempts +
             snapshot.probe.controlAttempts +
             snapshot.totalLoadAttempts
+        val env = snapshot.environment
         val hasStrongAmbientSignal = snapshot.installedAdBlockerPackages.isNotEmpty() ||
-            (snapshot.environment?.privateDnsActive == true &&
-                matchesKnownAdBlockerDns(snapshot.environment.privateDnsServer))
+            (env?.privateDnsActive == true && matchesKnownAdBlockerDns(env.privateDnsServer))
         return when {
             // A strong ambient signal alone is enough for HIGH confidence even without probe data.
             hasStrongAmbientSignal && sampleSize < THRESHOLD_MEDIUM -> Confidence.HIGH
