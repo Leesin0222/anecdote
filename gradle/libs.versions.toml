@@ -15,7 +15,7 @@ firebaseBom = "33.5.1"
 mockk = "1.14.9"
 turbine = "1.2.0"
 ktlint = "12.1.2"
-detekt = "1.23.7"
+detekt = "1.23.8"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
