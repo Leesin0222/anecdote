@@ -137,6 +137,31 @@ class DetectorGateTest {
     }
 
     @Test
+    fun `policy change unlocks HIGH Blocked and applies new limit but keeps grace`() {
+        val g = gate(gracePeriodMs = 5_000L, maxEvaluationsPerSession = 1)
+        g.onStart(now = 0L)
+
+        assertTrue(g.shouldEvaluate(now = 5_000L, environment = null))
+        g.onStateTransitioned(BlockState.Blocked(Confidence.HIGH, emptyList()))
+        assertFalse(g.shouldEvaluate(now = 5_001L, environment = null))
+
+        g.onPolicyChanged(maxEvaluationsPerSession = 2)
+        assertTrue(g.shouldEvaluate(now = 5_002L, environment = null))
+        g.onStateTransitioned(BlockState.NotBlocked)
+        assertTrue(g.shouldEvaluate(now = 5_003L, environment = null))
+        g.onStateTransitioned(BlockState.Suspected(Confidence.LOW, emptyList()))
+        assertFalse(g.shouldEvaluate(now = 5_004L, environment = null))
+    }
+
+    @Test
+    fun `policy change during grace does not skip grace`() {
+        val g = gate(gracePeriodMs = 5_000L)
+        g.onStart(now = 0L)
+        g.onPolicyChanged(maxEvaluationsPerSession = 3)
+        assertFalse(g.shouldEvaluate(now = 1_000L, environment = null))
+    }
+
+    @Test
     fun `onStart resets all gates`() {
         val g = gate(gracePeriodMs = 5_000L, maxEvaluationsPerSession = 1)
         g.onStart(now = 0L)

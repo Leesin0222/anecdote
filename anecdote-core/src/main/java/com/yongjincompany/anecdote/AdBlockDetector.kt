@@ -35,10 +35,17 @@ public class AdBlockDetector private constructor(
     private val config: DetectorConfig,
 ) {
 
-    private val evaluator = BlockStateEvaluator(
-        policy = config.policyConfig,
+    @Volatile
+    private var currentPolicy: PolicyConfig = config.policyConfig
+
+    @Volatile
+    private var evaluator = BlockStateEvaluator(
+        policy = currentPolicy,
         extraAdBlockerDnsSuffixes = config.extraAdBlockerDnsSuffixes,
     )
+
+    /** The policy currently used for verdicts. Changes after [updatePolicy]. */
+    public val policy: PolicyConfig get() = currentPolicy
     private val gate = DetectorGate(
         gracePeriodMs = config.probeConfig.gracePeriodMs,
         maxEvaluationsPerSession = config.policyConfig.maxEvaluationsPerSession,
@@ -145,6 +152,37 @@ public class AdBlockDetector private constructor(
             aggregator?.snapshot?.value ?: return
         }
         reevaluateInternal(snap)
+    }
+
+    /**
+     * Replaces the active policy at runtime — e.g. thresholds or weights fetched from Remote
+     * Config — without rebuilding the detector. The block starts from the current values, so
+     * only the fields you set change:
+     *
+     * ```
+     * detector.updatePolicy {
+     *     thresholdBlocked = remoteConfig.getLong("adblock_threshold_blocked").toInt()
+     *     weights = weights.copy(installedAdBlockerBonus = 30.0)
+     * }
+     * ```
+     *
+     * The session's evaluation limit and HIGH-confidence lock are reset and the latest snapshot
+     * is re-evaluated immediately under the new policy.
+     *
+     * @throws IllegalArgumentException if the resulting policy is invalid; the previous policy
+     *   stays in effect.
+     */
+    public fun updatePolicy(block: PolicyConfig.Builder.() -> Unit) {
+        val newPolicy = currentPolicy.toBuilder().apply(block).build()
+        synchronized(lock) {
+            currentPolicy = newPolicy
+            evaluator = BlockStateEvaluator(
+                policy = newPolicy,
+                extraAdBlockerDnsSuffixes = config.extraAdBlockerDnsSuffixes,
+            )
+            gate.onPolicyChanged(newPolicy.maxEvaluationsPerSession)
+        }
+        reevaluate()
     }
 
     public fun registerSignalSource(source: AdNetworkSignalSource) {

@@ -5,7 +5,7 @@ import com.yongjincompany.anecdote.Confidence
 
 internal class DetectorGate(
     private val gracePeriodMs: Long,
-    private val maxEvaluationsPerSession: Int,
+    private var maxEvaluationsPerSession: Int,
 ) {
     private var startedAt: Long = 0L
     private var evaluationCount: Int = 0
@@ -27,6 +27,17 @@ internal class DetectorGate(
         if (confirmedHighBlocked) return false
         if (evaluationCount >= maxEvaluationsPerSession) return false
         return true
+    }
+
+    /**
+     * A new policy may judge the same evidence differently, so a lock or exhausted budget
+     * earned under the old policy must not freeze the verdict. The grace period is kept.
+     */
+    @Synchronized
+    fun onPolicyChanged(maxEvaluationsPerSession: Int) {
+        this.maxEvaluationsPerSession = maxEvaluationsPerSession
+        evaluationCount = 0
+        confirmedHighBlocked = false
     }
 
     @Synchronized
