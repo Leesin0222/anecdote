@@ -2,6 +2,7 @@ package com.yongjincompany.anecdote.reporter.firebase
 
 import com.yongjincompany.anecdote.BlockState
 import com.yongjincompany.anecdote.Confidence
+import com.yongjincompany.anecdote.ScoreBreakdown
 import com.yongjincompany.anecdote.signal.AdNetworkSignal
 import com.yongjincompany.anecdote.signal.ErrorType
 import com.yongjincompany.anecdote.signal.ProbeFailureReason
@@ -137,6 +138,35 @@ class FirebaseEventMappingTest {
         val params = signal.toFirebaseParams()
         assertFalse(params.containsKey(PARAM_LATENCY_MS))
         assertFalse(params.containsKey(PARAM_FAILURE_REASON))
+    }
+
+    @Test
+    fun `Blocked state with breakdown emits score params`() {
+        val breakdown = ScoreBreakdown(
+            total = 85,
+            probeDelta = 10.4,
+            dnsBlock = 60.0,
+            loadFailure = 0.0,
+            vpn = 10.0,
+            privateDns = 15.0,
+            knownAdBlockerDns = 0.0,
+            installedAdBlocker = 0.0,
+            ambientMultiplier = 1.0,
+        )
+        val params = BlockState.Blocked(Confidence.HIGH, emptyList(), breakdown).toFirebaseParams()
+        assertEquals(85L, params[PARAM_SCORE])
+        assertEquals(10L, params[PARAM_SCORE_PROBE])
+        assertEquals(60L, params[PARAM_SCORE_DNS_BLOCK])
+        assertEquals(15L, params[PARAM_SCORE_PRIVATE_DNS])
+        assertEquals(1.0, params[PARAM_AMBIENT_MULTIPLIER])
+        // Firebase allows at most 25 params per event.
+        assertTrue(params.size <= 25)
+    }
+
+    @Test
+    fun `state without breakdown omits score params`() {
+        val params = BlockState.Suspected(Confidence.LOW, emptyList()).toFirebaseParams()
+        assertFalse(params.containsKey(PARAM_SCORE))
     }
 
     @Test

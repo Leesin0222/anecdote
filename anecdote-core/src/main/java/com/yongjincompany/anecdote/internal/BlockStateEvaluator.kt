@@ -2,6 +2,7 @@ package com.yongjincompany.anecdote.internal
 
 import com.yongjincompany.anecdote.BlockState
 import com.yongjincompany.anecdote.Confidence
+import com.yongjincompany.anecdote.ScoreBreakdown
 import com.yongjincompany.anecdote.config.PolicyConfig
 import com.yongjincompany.anecdote.config.SignalWeights
 
@@ -38,25 +39,50 @@ internal class BlockStateEvaluator(
             return BlockState.Unknown
         }
 
-        val score = computeScore(snapshot)
+        val breakdown = computeBreakdown(snapshot)
+        val score = breakdown.total
         val confidence = computeConfidence(snapshot)
 
         return when {
-            score >= policy.thresholdBlocked -> BlockState.Blocked(confidence, snapshot.recentSignals)
-            score >= policy.thresholdSuspected -> BlockState.Suspected(confidence, snapshot.recentSignals)
+            score >= policy.thresholdBlocked ->
+                BlockState.Blocked(confidence, snapshot.recentSignals, breakdown)
+            score >= policy.thresholdSuspected ->
+                BlockState.Suspected(confidence, snapshot.recentSignals, breakdown)
             else -> BlockState.NotBlocked
         }
     }
 
-    internal fun computeScore(snapshot: AggregateSnapshot): Int {
-        val direct = probeScore(snapshot.probe) + dnsBlockScore(snapshot.probe) + loadScore(snapshot)
-        val ambientRaw = ambientScore(snapshot)
-        val ambient = if (adsReachable(snapshot.probe)) {
-            ambientRaw * weights.ambientDiscountWhenAdsReachable
+    internal fun computeScore(snapshot: AggregateSnapshot): Int = computeBreakdown(snapshot).total
+
+    internal fun computeBreakdown(snapshot: AggregateSnapshot): ScoreBreakdown {
+        val env = snapshot.environment
+        val privateDnsActive = env?.privateDnsActive == true
+        val vpn = if (env?.vpnActive == true) weights.vpnBonus else 0.0
+        val privateDns = if (privateDnsActive) weights.privateDnsBonus else 0.0
+        val knownDns = if (hasKnownAdBlockerDns(snapshot)) weights.knownAdBlockerDnsBonus else 0.0
+        val installed = if (snapshot.installedAdBlockerPackages.isNotEmpty()) {
+            weights.installedAdBlockerBonus
         } else {
-            ambientRaw
+            0.0
         }
-        return (direct + ambient).toInt().coerceIn(0, MAX_SCORE)
+        val multiplier = if (adsReachable(snapshot.probe)) weights.ambientDiscountWhenAdsReachable else 1.0
+
+        val probe = probeScore(snapshot.probe)
+        val dnsBlock = dnsBlockScore(snapshot.probe)
+        val load = loadScore(snapshot)
+        val raw = probe + dnsBlock + load + (vpn + privateDns + knownDns + installed) * multiplier
+
+        return ScoreBreakdown(
+            total = raw.toInt().coerceIn(0, MAX_SCORE),
+            probeDelta = probe,
+            dnsBlock = dnsBlock,
+            loadFailure = load,
+            vpn = vpn,
+            privateDns = privateDns,
+            knownAdBlockerDns = knownDns,
+            installedAdBlocker = installed,
+            ambientMultiplier = multiplier,
+        )
     }
 
     private fun probeScore(probe: ProbeStats): Double {
@@ -103,23 +129,6 @@ internal class BlockStateEvaluator(
         if (snapshot.networks.isEmpty()) return 0.0
         val avgLoadFailureRate = snapshot.networks.values.map { it.loadFailureRate }.average()
         return avgLoadFailureRate * weights.loadFailureWeight
-    }
-
-    private fun ambientScore(snapshot: AggregateSnapshot): Double {
-        var score = 0.0
-        snapshot.environment?.let { env ->
-            if (env.vpnActive) score += weights.vpnBonus
-            if (env.privateDnsActive) {
-                score += weights.privateDnsBonus
-                if (matchesKnownAdBlockerDns(env.privateDnsServer)) {
-                    score += weights.knownAdBlockerDnsBonus
-                }
-            }
-        }
-        if (snapshot.installedAdBlockerPackages.isNotEmpty()) {
-            score += weights.installedAdBlockerBonus
-        }
-        return score
     }
 
     private fun computeConfidence(snapshot: AggregateSnapshot): Confidence {

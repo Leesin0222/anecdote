@@ -2,7 +2,9 @@ package com.yongjincompany.anecdote.reporter.firebase
 
 import android.os.Bundle
 import com.yongjincompany.anecdote.BlockState
+import com.yongjincompany.anecdote.ScoreBreakdown
 import com.yongjincompany.anecdote.signal.AdNetworkSignal
+import kotlin.math.roundToLong
 
 internal const val MAX_STRING_VALUE_LENGTH = 100
 
@@ -12,16 +14,31 @@ internal fun BlockState.toFirebaseParams(): Map<String, Any> = buildMap {
         is BlockState.Suspected -> {
             put(PARAM_CONFIDENCE, confidence.name.lowercase())
             put(PARAM_SIGNAL_COUNT, signals.size.toLong())
+            breakdown?.let { putAll(it.toFirebaseParams()) }
         }
         is BlockState.Blocked -> {
             put(PARAM_CONFIDENCE, confidence.name.lowercase())
             put(PARAM_SIGNAL_COUNT, signals.size.toLong())
+            breakdown?.let { putAll(it.toFirebaseParams()) }
         }
         BlockState.NotBlocked,
         BlockState.Unknown,
         -> Unit
     }
 }
+
+/** Points are rounded to whole numbers — enough resolution for dashboards, fewer bytes. */
+internal fun ScoreBreakdown.toFirebaseParams(): Map<String, Any> = mapOf(
+    PARAM_SCORE to total.toLong(),
+    PARAM_SCORE_PROBE to probeDelta.roundToLong(),
+    PARAM_SCORE_DNS_BLOCK to dnsBlock.roundToLong(),
+    PARAM_SCORE_LOAD to loadFailure.roundToLong(),
+    PARAM_SCORE_VPN to vpn.roundToLong(),
+    PARAM_SCORE_PRIVATE_DNS to privateDns.roundToLong(),
+    PARAM_SCORE_KNOWN_DNS to knownAdBlockerDns.roundToLong(),
+    PARAM_SCORE_INSTALLED to installedAdBlocker.roundToLong(),
+    PARAM_AMBIENT_MULTIPLIER to ambientMultiplier,
+)
 
 internal fun AdNetworkSignal.toFirebaseParams(): Map<String, Any> = buildMap {
     put(PARAM_SIGNAL_TYPE, signalTypeKey())
@@ -101,6 +118,15 @@ internal const val EVENT_SIGNAL = "adblock_signal"
 internal const val PARAM_STATE = "state"
 internal const val PARAM_CONFIDENCE = "confidence"
 internal const val PARAM_SIGNAL_COUNT = "signal_count"
+internal const val PARAM_SCORE = "score"
+internal const val PARAM_SCORE_PROBE = "score_probe"
+internal const val PARAM_SCORE_DNS_BLOCK = "score_dns_block"
+internal const val PARAM_SCORE_LOAD = "score_load"
+internal const val PARAM_SCORE_VPN = "score_vpn"
+internal const val PARAM_SCORE_PRIVATE_DNS = "score_private_dns"
+internal const val PARAM_SCORE_KNOWN_DNS = "score_known_dns"
+internal const val PARAM_SCORE_INSTALLED = "score_installed"
+internal const val PARAM_AMBIENT_MULTIPLIER = "ambient_multiplier"
 internal const val PARAM_SIGNAL_TYPE = "signal_type"
 internal const val PARAM_NETWORK_ID = "network_id"
 internal const val PARAM_ERROR_TYPE = "error_type"

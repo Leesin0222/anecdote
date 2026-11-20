@@ -452,6 +452,44 @@ class BlockStateEvaluatorTest {
         assertEquals(BlockState.NotBlocked, evaluator.evaluate(snap))
     }
 
+    @Test
+    fun `verdict carries breakdown that sums to the score`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        val snap = AggregateSnapshot.EMPTY.copy(
+            probe = ProbeStats(
+                adAttempts = 8,
+                adFailures = 1,
+                adFailureRate = 0.125,
+                controlAttempts = 2,
+                controlFailures = 0,
+                controlFailureRate = 0.0,
+                adDnsSinkholed = 1,
+            ),
+            environment = EnvironmentStats(true, false, null, null),
+        )
+        val result = evaluator.evaluate(snap) as BlockState.Blocked
+        val b = requireNotNull(result.breakdown)
+        assertEquals(10.0, b.probeDelta, 0.0001)
+        assertEquals(60.0, b.dnsBlock, 0.0001)
+        assertEquals(10.0, b.vpn, 0.0001)
+        assertEquals(1.0, b.ambientMultiplier, 0.0001)
+        assertEquals(80, b.total)
+        assertEquals(b.total, (b.direct + b.ambientApplied).toInt())
+    }
+
+    @Test
+    fun `breakdown reports discount multiplier when ads reachable`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        val snap = AggregateSnapshot.EMPTY.copy(
+            probe = reachableProbe(),
+            installedAdBlockerPackages = setOf("com.adguard.android"),
+        )
+        val b = evaluator.computeBreakdown(snap)
+        assertEquals(50.0, b.installedAdBlocker, 0.0001)
+        assertEquals(0.2, b.ambientMultiplier, 0.0001)
+        assertEquals(10, b.total)
+    }
+
     private fun reachableProbe() = ProbeStats(
         adAttempts = 8,
         adFailures = 0,
