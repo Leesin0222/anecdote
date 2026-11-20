@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicInteger
 
 internal class AdDomainProber(
     private val config: ProbeConfig,
@@ -34,15 +35,19 @@ internal class AdDomainProber(
     )
     override val signals: SharedFlow<AdNetworkSignal> = _signals.asSharedFlow()
 
+    @Volatile
     private var cycleJob: Job? = null
-    private var cycleIndex: Int = 0
+
+    // Written by the probe loop and by resetSchedule() (called from the env-change collector
+    // on another thread), so it must be atomic.
+    private val cycleIndex = AtomicInteger(0)
 
     // Conflated so multiple back-to-back reset signals collapse into one wakeup.
     private val wakeup = Channel<Unit>(Channel.CONFLATED)
 
     override fun start() {
         if (cycleJob?.isActive == true) return
-        cycleIndex = 0
+        cycleIndex.set(0)
         cycleJob = scope.launch {
             while (isActive) {
                 try {
@@ -53,7 +58,7 @@ internal class AdDomainProber(
                     // Swallow unexpected exceptions from a single cycle so the loop survives.
                 }
                 val delayMs = nextDelayMs()
-                cycleIndex++
+                cycleIndex.incrementAndGet()
                 waitForNextCycle(delayMs)
             }
         }
@@ -69,13 +74,13 @@ internal class AdDomainProber(
      * Call when the network environment changes so we converge quickly.
      */
     fun resetSchedule() {
-        cycleIndex = 0
+        cycleIndex.set(0)
         wakeup.trySend(Unit)
     }
 
     private fun nextDelayMs(): Long {
         val seq = config.intervalSequenceMs
-        val idx = cycleIndex.coerceAtMost(seq.size - 1)
+        val idx = cycleIndex.get().coerceIn(0, seq.size - 1)
         return seq[idx]
     }
 
