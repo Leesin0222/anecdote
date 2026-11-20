@@ -175,8 +175,10 @@ public class AdBlockDetector private constructor(
      *   stays in effect.
      */
     public fun updatePolicy(block: PolicyConfig.Builder.() -> Unit) {
-        val newPolicy = currentPolicy.toBuilder().apply(block).build()
         synchronized(lock) {
+            // Build from currentPolicy inside the lock so concurrent updates (e.g. Remote
+            // Config + an A/B framework) compose instead of one silently overwriting the other.
+            val newPolicy = currentPolicy.toBuilder().apply(block).build()
             currentPolicy = newPolicy
             evaluator = BlockStateEvaluator(
                 policy = newPolicy,
