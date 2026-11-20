@@ -39,17 +39,22 @@ class DnsReachabilityCheckerTest {
 
     @Test
     fun `isSinkholeAddress catches ipv6 unique local`() {
-        val ula = InetAddress.getByAddress(ByteArray(16).also { it[0] = 0xFD.toByte(); it[15] = 1 })
+        val ula = InetAddress.getByAddress(
+            ByteArray(16).also {
+                it[0] = 0xFD.toByte()
+                it[15] = 1
+            },
+        )
         assertTrue(ula.isSinkholeAddress())
     }
 
     @Test
     fun `isSinkholeAddress allows public ipv6`() {
         // 2001:4860:4860::8888
-        val bytes = ByteArray(16).also {
-            it[0] = 0x20; it[1] = 0x01; it[2] = 0x48; it[3] = 0x60
-            it[4] = 0x48; it[5] = 0x60; it[14] = 0x88.toByte(); it[15] = 0x88.toByte()
-        }
+        val bytes = byteArrayOf(
+            0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0,
+            0, 0, 0, 0, 0, 0, 0x88.toByte(), 0x88.toByte(),
+        )
         assertFalse(InetAddress.getByAddress(bytes).isSinkholeAddress())
     }
 
