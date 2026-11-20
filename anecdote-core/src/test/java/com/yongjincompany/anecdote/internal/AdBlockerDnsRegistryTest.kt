@@ -21,6 +21,19 @@ class AdBlockerDnsRegistryTest {
     }
 
     @Test
+    fun `legacy AdGuard hostnames match`() {
+        assertTrue(AdBlockerDnsRegistry.looksLikeAdBlocker("dns.adguard.com"))
+        assertTrue(AdBlockerDnsRegistry.looksLikeAdBlocker("dns-family.adguard.com"))
+    }
+
+    @Test
+    fun `unfiltered AdGuard and bare dns_com do not match`() {
+        assertFalse(AdBlockerDnsRegistry.looksLikeAdBlocker("unfiltered.adguard-dns.com"))
+        assertFalse(AdBlockerDnsRegistry.looksLikeAdBlocker("dns-unfiltered.adguard.com"))
+        assertFalse(AdBlockerDnsRegistry.looksLikeAdBlocker("dns.com"))
+    }
+
+    @Test
     fun `suffix patterns match subdomains`() {
         assertTrue(AdBlockerDnsRegistry.looksLikeAdBlocker("abc123.dns.nextdns.io"))
         assertTrue(AdBlockerDnsRegistry.looksLikeAdBlocker("p0.freedns.controld.com"))

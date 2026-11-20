@@ -12,10 +12,13 @@ package com.yongjincompany.anecdote.internal
  */
 internal object AdBlockerDnsRegistry {
     val BUILTIN_SIGNATURES: List<String> = listOf(
-        // AdGuard DNS — explicit ad/tracker filtering. Excludes "unfiltered.adguard-dns.com".
-        "dns.com",
+        // AdGuard DNS — explicit ad/tracker filtering. Excludes "unfiltered.adguard-dns.com"
+        // (and its legacy "dns-unfiltered.adguard.com" alias).
         "dns.adguard-dns.com",
         "family.adguard-dns.com",
+        // Legacy AdGuard hostnames — still the most common Private DNS entry in KR guides.
+        "dns.adguard.com",
+        "dns-family.adguard.com",
         // NextDNS — per-profile resolvers; users overwhelmingly enable ad/tracker filters.
         ".nextdns.io",
         // Mullvad — ad-blocking specific endpoints.
