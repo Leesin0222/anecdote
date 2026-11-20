@@ -65,7 +65,16 @@ internal class SignalAggregator(
     private suspend fun handleSignal(signal: AdNetworkSignal) {
         eventMutex.withLock {
             when (signal) {
-                is AdNetworkSignal.NetworkEnvironment -> latestEnvironment = signal
+                is AdNetworkSignal.NetworkEnvironment -> {
+                    val previous = latestEnvironment
+                    if (previous != null && previous.signature() != signal.signature()) {
+                        // Probe/load outcomes observed under the old network path say nothing
+                        // about the new one (e.g. blocker just switched off). Drop them so the
+                        // next verdict isn't dragged by stale failures.
+                        events.clear()
+                    }
+                    latestEnvironment = signal
+                }
                 is AdNetworkSignal.InstalledAdBlockers -> latestInstalledAdBlockers = signal
                 else -> events.addLast(signal)
             }
@@ -146,6 +155,9 @@ internal class SignalAggregator(
                 listOfNotNull(latestEnvironment, latestInstalledAdBlockers),
         )
     }
+
+    private fun AdNetworkSignal.NetworkEnvironment.signature() =
+        EnvSignature(vpnActive, privateDnsActive, privateDnsServer?.lowercase())
 
     private fun List<AdNetworkSignal.ProbeResult>.failureRate(): Double {
         if (isEmpty()) return 0.0

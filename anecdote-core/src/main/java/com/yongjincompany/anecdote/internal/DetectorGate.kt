@@ -39,7 +39,11 @@ internal class DetectorGate(
 
     private fun applyEnvironmentChange(now: Long, environment: EnvironmentStats?) {
         val newSig = environment?.let {
-            EnvSignature(vpnActive = it.vpnActive, privateDnsActive = it.privateDnsActive)
+            EnvSignature(
+                vpnActive = it.vpnActive,
+                privateDnsActive = it.privateDnsActive,
+                privateDnsServer = it.privateDnsServer?.lowercase(),
+            )
         }
         val previousSig = lastEnvSignature
         lastEnvSignature = newSig
@@ -49,9 +53,15 @@ internal class DetectorGate(
             confirmedHighBlocked = false
         }
     }
-
-    internal data class EnvSignature(
-        val vpnActive: Boolean,
-        val privateDnsActive: Boolean,
-    )
 }
+
+/**
+ * The parts of the network environment that change which path ad traffic takes. Shared by
+ * [DetectorGate] (reset grace/limits), [SignalAggregator] (drop stale evidence) and the probe
+ * scheduler (re-probe immediately) so all three agree on what counts as "network changed".
+ */
+internal data class EnvSignature(
+    val vpnActive: Boolean,
+    val privateDnsActive: Boolean,
+    val privateDnsServer: String?,
+)

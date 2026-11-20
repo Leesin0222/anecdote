@@ -80,6 +80,34 @@ class SignalAggregatorTest {
     }
 
     @Test
+    fun `environment change drops stale probe and load evidence`() = runTest {
+        val source = FakeSource("mixed")
+        val aggregator = makeAggregator(backgroundScope)
+
+        aggregator.register(source)
+        testScheduler.runCurrent()
+
+        source.emit(env(privateDns = true, server = "dns.adguard.com"))
+        source.emit(probeResult(timestamp = 9_000L, domain = "ad", isControl = false, reachable = false))
+        source.emit(loadFailed("admob", timestamp = 9_000L))
+        testScheduler.runCurrent()
+        assertEquals(1, aggregator.snapshot.value.probe.adAttempts)
+
+        // Same flags, same server (case-insensitive) → keep evidence.
+        source.emit(env(privateDns = true, server = "DNS.AdGuard.com"))
+        testScheduler.runCurrent()
+        assertEquals(1, aggregator.snapshot.value.probe.adAttempts)
+
+        // Server switched → evidence from the old path is dropped.
+        source.emit(env(privateDns = true, server = "dns.google"))
+        testScheduler.runCurrent()
+        val snap = aggregator.snapshot.value
+        assertEquals(0, snap.probe.adAttempts)
+        assertEquals(0, snap.totalLoadAttempts)
+        assertEquals("dns.google", snap.environment?.privateDnsServer)
+    }
+
+    @Test
     fun `load signals populate per-network stats`() = runTest {
         val source = FakeSource("admob")
         val aggregator = makeAggregator(backgroundScope)
@@ -237,6 +265,15 @@ class SignalAggregatorTest {
         errorType = errorType,
         rawErrorCode = null,
         rawErrorMessage = null,
+    )
+
+    private fun env(privateDns: Boolean, server: String?) = AdNetworkSignal.NetworkEnvironment(
+        networkId = AdNetworkSignal.NetworkEnvironment.NETWORK_ID,
+        timestamp = 9_000L,
+        vpnActive = false,
+        privateDnsActive = privateDns,
+        privateDnsServer = server,
+        mcc = null,
     )
 
     private fun loadSucceeded(networkId: String, timestamp: Long) = AdNetworkSignal.LoadSucceeded(

@@ -11,11 +11,13 @@ import com.yongjincompany.anecdote.internal.AndroidNetworkChangeRegistrar
 import com.yongjincompany.anecdote.internal.AndroidNetworkEnvironmentReader
 import com.yongjincompany.anecdote.internal.BlockStateEvaluator
 import com.yongjincompany.anecdote.internal.DetectorGate
+import com.yongjincompany.anecdote.internal.EnvSignature
 import com.yongjincompany.anecdote.internal.InstalledAdBlockerRegistry
 import com.yongjincompany.anecdote.internal.InstalledAdBlockerSource
 import com.yongjincompany.anecdote.internal.NetworkEnvironmentSource
 import com.yongjincompany.anecdote.internal.OkHttpReachabilityChecker
 import com.yongjincompany.anecdote.internal.SignalAggregator
+import com.yongjincompany.anecdote.internal.hasSameVerdictAs
 import com.yongjincompany.anecdote.report.BlockEventReporter
 import com.yongjincompany.anecdote.signal.AdNetworkSignal
 import com.yongjincompany.anecdote.signal.AdNetworkSignalSource
@@ -103,10 +105,14 @@ public class AdBlockDetector private constructor(
             // Reset probe backoff to the head whenever the network environment changes,
             // so the SDK converges quickly after VPN/Private-DNS toggles.
             newScope.launch {
-                var prevSignature: Triple<Boolean, Boolean, String?>? = null
+                var prevSignature: EnvSignature? = null
                 env.signals.collect { signal ->
                     val envSignal = signal as? AdNetworkSignal.NetworkEnvironment ?: return@collect
-                    val sig = Triple(envSignal.vpnActive, envSignal.privateDnsActive, envSignal.privateDnsServer)
+                    val sig = EnvSignature(
+                        vpnActive = envSignal.vpnActive,
+                        privateDnsActive = envSignal.privateDnsActive,
+                        privateDnsServer = envSignal.privateDnsServer?.lowercase(),
+                    )
                     if (prevSignature != null && prevSignature != sig) {
                         probe.resetSchedule()
                     }
@@ -191,7 +197,7 @@ public class AdBlockDetector private constructor(
 
         val newState = evaluator.evaluate(snapshot)
         val oldState = _state.value
-        if (newState == oldState) return
+        if (newState.hasSameVerdictAs(oldState)) return
 
         _state.value = newState
         gate.onStateTransitioned(newState)

@@ -13,12 +13,30 @@ class DetectorGateTest {
         maxEvaluationsPerSession: Int = 3,
     ) = DetectorGate(gracePeriodMs, maxEvaluationsPerSession)
 
-    private fun env(vpn: Boolean = false, privateDns: Boolean = false) = EnvironmentStats(
+    private fun env(
+        vpn: Boolean = false,
+        privateDns: Boolean = false,
+        server: String? = null,
+    ) = EnvironmentStats(
         vpnActive = vpn,
         privateDnsActive = privateDns,
-        privateDnsServer = null,
+        privateDnsServer = server,
         mcc = null,
     )
+
+    @Test
+    fun `private DNS server change unlocks HIGH Blocked`() {
+        val g = gate(gracePeriodMs = 0L, maxEvaluationsPerSession = 100)
+        g.onStart(now = 0L)
+
+        val adguard = env(privateDns = true, server = "dns.adguard.com")
+        assertTrue(g.shouldEvaluate(now = 1L, environment = adguard))
+        g.onStateTransitioned(BlockState.Blocked(Confidence.HIGH, emptyList()))
+        assertFalse(g.shouldEvaluate(now = 2L, environment = adguard))
+
+        // Same on/off flags, different server → must reset.
+        assertTrue(g.shouldEvaluate(now = 3L, environment = env(privateDns = true, server = "dns.google")))
+    }
 
     @Test
     fun `evaluation blocked during grace period`() {
