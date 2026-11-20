@@ -3,6 +3,7 @@ package com.yongjincompany.anecdote.internal
 import com.yongjincompany.anecdote.signal.AdNetworkSignal
 import com.yongjincompany.anecdote.signal.AdNetworkSignalSource
 import com.yongjincompany.anecdote.signal.ErrorType
+import com.yongjincompany.anecdote.signal.ProbeFailureReason
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -56,6 +57,26 @@ class SignalAggregatorTest {
         assertEquals(0.5, snap.probe.adFailureRate, 0.0001)
         assertEquals(1, snap.probe.controlAttempts)
         assertEquals(0.0, snap.probe.controlFailureRate, 0.0001)
+    }
+
+    @Test
+    fun `probe failure reasons populate dns block counters`() = runTest {
+        val source = FakeSource("probe")
+        val aggregator = makeAggregator(backgroundScope)
+
+        aggregator.register(source)
+        testScheduler.runCurrent()
+
+        source.emit(probeResult(9_000L, "ad1", false, false, null, ProbeFailureReason.DNS_SINKHOLE))
+        source.emit(probeResult(9_000L, "ad2", false, false, null, ProbeFailureReason.DNS_NXDOMAIN))
+        source.emit(probeResult(9_000L, "ad3", false, false, null, ProbeFailureReason.HTTP_UNREACHABLE))
+        source.emit(probeResult(9_000L, "ctrl", true, false, null, ProbeFailureReason.DNS_NXDOMAIN))
+        testScheduler.runCurrent()
+
+        val probe = aggregator.snapshot.value.probe
+        assertEquals(1, probe.adDnsSinkholed)
+        assertEquals(1, probe.adDnsNxdomain)
+        assertEquals(1, probe.controlDnsBlocked)
     }
 
     @Test
@@ -195,6 +216,7 @@ class SignalAggregatorTest {
         isControl: Boolean,
         reachable: Boolean,
         latencyMs: Long? = 10L,
+        failureReason: ProbeFailureReason? = null,
     ) = AdNetworkSignal.ProbeResult(
         networkId = AdNetworkSignal.ProbeResult.NETWORK_ID,
         timestamp = timestamp,
@@ -202,6 +224,7 @@ class SignalAggregatorTest {
         isControl = isControl,
         reachable = reachable,
         latencyMs = latencyMs,
+        failureReason = failureReason,
     )
 
     private fun loadFailed(

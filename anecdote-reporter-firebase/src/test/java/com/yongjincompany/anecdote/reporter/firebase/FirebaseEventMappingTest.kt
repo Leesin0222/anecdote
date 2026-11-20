@@ -4,6 +4,7 @@ import com.yongjincompany.anecdote.BlockState
 import com.yongjincompany.anecdote.Confidence
 import com.yongjincompany.anecdote.signal.AdNetworkSignal
 import com.yongjincompany.anecdote.signal.ErrorType
+import com.yongjincompany.anecdote.signal.ProbeFailureReason
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -135,6 +136,21 @@ class FirebaseEventMappingTest {
         )
         val params = signal.toFirebaseParams()
         assertFalse(params.containsKey(PARAM_LATENCY_MS))
+        assertFalse(params.containsKey(PARAM_FAILURE_REASON))
+    }
+
+    @Test
+    fun `ProbeResult failure reason is encoded in lowercase`() {
+        val signal = AdNetworkSignal.ProbeResult(
+            networkId = "probe",
+            timestamp = 100L,
+            domain = "ad.example",
+            isControl = false,
+            reachable = false,
+            latencyMs = null,
+            failureReason = ProbeFailureReason.DNS_SINKHOLE,
+        )
+        assertEquals("dns_sinkhole", signal.toFirebaseParams()[PARAM_FAILURE_REASON])
     }
 
     @Test

@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.UnknownHostException
 
@@ -62,5 +63,18 @@ internal class InetAddressDnsChecker(
     }
 }
 
+/**
+ * Addresses a blocking resolver hands back instead of the real one. Besides 0.0.0.0 and
+ * loopback this covers private/LAN ranges, which self-hosted blockers (Pi-hole, AdGuard Home)
+ * commonly return — a public ad CDN never legitimately resolves to a LAN address.
+ */
 internal fun InetAddress.isSinkholeAddress(): Boolean =
-    isAnyLocalAddress || isLoopbackAddress
+    isAnyLocalAddress || isLoopbackAddress || isSiteLocalAddress || isLinkLocalAddress ||
+        isUniqueLocalIpv6()
+
+/** IPv6 unique local addresses (fc00::/7), the IPv6 counterpart of RFC 1918 ranges. */
+private fun InetAddress.isUniqueLocalIpv6(): Boolean =
+    this is Inet6Address && (address[0].toInt() and ULA_MASK) == ULA_PREFIX
+
+private const val ULA_MASK = 0xFE
+private const val ULA_PREFIX = 0xFC

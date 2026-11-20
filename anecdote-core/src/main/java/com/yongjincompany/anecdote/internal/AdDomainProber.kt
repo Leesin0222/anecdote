@@ -3,6 +3,7 @@ package com.yongjincompany.anecdote.internal
 import com.yongjincompany.anecdote.config.ProbeConfig
 import com.yongjincompany.anecdote.signal.AdNetworkSignal
 import com.yongjincompany.anecdote.signal.AdNetworkSignalSource
+import com.yongjincompany.anecdote.signal.ProbeFailureReason
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -121,6 +122,7 @@ internal class AdDomainProber(
                 isControl = isControl,
                 reachable = false,
                 latencyMs = null,
+                failureReason = dns.failureReason(),
             )
         }
 
@@ -139,6 +141,17 @@ internal class AdDomainProber(
             isControl = isControl,
             reachable = http.reachable,
             latencyMs = http.latencyMs,
+            failureReason = when {
+                http.reachable -> null
+                http.tlsFailure -> ProbeFailureReason.TLS_FAILURE
+                else -> ProbeFailureReason.HTTP_UNREACHABLE
+            },
         )
+    }
+
+    private fun DnsResolution.failureReason(): ProbeFailureReason = when {
+        allSinkholed -> ProbeFailureReason.DNS_SINKHOLE
+        lookupSucceeded -> ProbeFailureReason.DNS_NXDOMAIN
+        else -> ProbeFailureReason.DNS_FAILURE
     }
 }

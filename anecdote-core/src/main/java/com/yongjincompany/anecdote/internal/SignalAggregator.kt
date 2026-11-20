@@ -2,6 +2,7 @@ package com.yongjincompany.anecdote.internal
 
 import com.yongjincompany.anecdote.signal.AdNetworkSignal
 import com.yongjincompany.anecdote.signal.AdNetworkSignalSource
+import com.yongjincompany.anecdote.signal.ProbeFailureReason
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -92,6 +93,12 @@ internal class SignalAggregator(
             controlAttempts = ctrlProbes.size,
             controlFailures = ctrlProbes.count { !it.reachable },
             controlFailureRate = ctrlProbes.failureRate(),
+            adDnsSinkholed = adProbes.count { it.failureReason == ProbeFailureReason.DNS_SINKHOLE },
+            adDnsNxdomain = adProbes.count { it.failureReason == ProbeFailureReason.DNS_NXDOMAIN },
+            controlDnsBlocked = ctrlProbes.count {
+                it.failureReason == ProbeFailureReason.DNS_SINKHOLE ||
+                    it.failureReason == ProbeFailureReason.DNS_NXDOMAIN
+            },
         )
 
         // Pair of (networkId, isBlockIndicativeFailure). Ambiguous errors are dropped.

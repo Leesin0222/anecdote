@@ -17,6 +17,11 @@ package com.yongjincompany.anecdote.config
  *   matches the built-in or consumer-supplied ad-blocker DNS registry.
  * @property installedAdBlockerBonus flat bonus when at least one known ad-blocker package
  *   is installed on the device.
+ * @property dnsSinkholeBonus flat bonus when at least one ad domain resolves to a sinkhole
+ *   address while control domains resolve normally. Near-certain evidence of DNS blocking.
+ * @property dnsNxdomainBonus flat bonus when at least one ad domain returns NXDOMAIN while
+ *   control domains resolve normally. Strong, but weaker than a sinkhole because an ad
+ *   endpoint can genuinely be retired.
  * @property ambientDiscountWhenAdsReachable multiplier (0..1) applied to the ambient signals
  *   above (VPN, Private DNS, known DNS, installed app) when the probe has enough samples and
  *   ad domains are demonstrably reachable. Ambient signals are circumstantial — an installed
@@ -30,6 +35,8 @@ public data class SignalWeights(
     public val privateDnsBonus: Double = 15.0,
     public val knownAdBlockerDnsBonus: Double = 60.0,
     public val installedAdBlockerBonus: Double = 50.0,
+    public val dnsSinkholeBonus: Double = 60.0,
+    public val dnsNxdomainBonus: Double = 30.0,
     public val ambientDiscountWhenAdsReachable: Double = 0.2,
 ) {
     init {

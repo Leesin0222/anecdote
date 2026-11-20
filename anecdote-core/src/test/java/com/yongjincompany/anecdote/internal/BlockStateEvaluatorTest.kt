@@ -398,6 +398,60 @@ class BlockStateEvaluatorTest {
         assertEquals(Confidence.MEDIUM, confidence)
     }
 
+    @Test
+    fun `single sinkholed ad domain with healthy control DNS yields Blocked`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        // delta 1/8 × 80 = 10 + sinkhole 60 = 70 → Blocked. Discount must not apply.
+        val snap = AggregateSnapshot.EMPTY.copy(
+            probe = ProbeStats(
+                adAttempts = 8,
+                adFailures = 1,
+                adFailureRate = 0.125,
+                controlAttempts = 2,
+                controlFailures = 0,
+                controlFailureRate = 0.0,
+                adDnsSinkholed = 1,
+            ),
+        )
+        assertTrue(evaluator.evaluate(snap) is BlockState.Blocked)
+    }
+
+    @Test
+    fun `nxdomain on ad domain scores lower than sinkhole`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        val snap = AggregateSnapshot.EMPTY.copy(
+            probe = ProbeStats(
+                adAttempts = 8,
+                adFailures = 1,
+                adFailureRate = 0.125,
+                controlAttempts = 2,
+                controlFailures = 0,
+                controlFailureRate = 0.0,
+                adDnsNxdomain = 1,
+            ),
+        )
+        // 10 + 30 = 40 → Suspected
+        assertTrue(evaluator.evaluate(snap) is BlockState.Suspected)
+    }
+
+    @Test
+    fun `dns block bonus ignored when control DNS is also blocked`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        val snap = AggregateSnapshot.EMPTY.copy(
+            probe = ProbeStats(
+                adAttempts = 8,
+                adFailures = 8,
+                adFailureRate = 1.0,
+                controlAttempts = 2,
+                controlFailures = 2,
+                controlFailureRate = 1.0,
+                adDnsSinkholed = 8,
+                controlDnsBlocked = 2,
+            ),
+        )
+        assertEquals(BlockState.NotBlocked, evaluator.evaluate(snap))
+    }
+
     private fun reachableProbe() = ProbeStats(
         adAttempts = 8,
         adFailures = 0,

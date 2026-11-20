@@ -16,6 +16,12 @@ internal data class ProbeStats(
     val controlAttempts: Int,
     val controlFailures: Int,
     val controlFailureRate: Double,
+    /** Ad-domain probes answered with a sinkhole address. */
+    val adDnsSinkholed: Int = 0,
+    /** Ad-domain probes answered NXDOMAIN. */
+    val adDnsNxdomain: Int = 0,
+    /** Control-domain probes answered with a sinkhole or NXDOMAIN — resolver itself is broken. */
+    val controlDnsBlocked: Int = 0,
 ) {
     /** Positive = ad domains fail more than control. Primary blocking signal. */
     val delta: Double get() = adFailureRate - controlFailureRate

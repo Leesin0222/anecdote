@@ -40,6 +40,7 @@ internal fun AdNetworkSignal.toFirebaseParams(): Map<String, Any> = buildMap {
             put(PARAM_IS_CONTROL, if (isControl) 1L else 0L)
             put(PARAM_REACHABLE, if (reachable) 1L else 0L)
             latencyMs?.let { put(PARAM_LATENCY_MS, it) }
+            failureReason?.let { put(PARAM_FAILURE_REASON, it.name.lowercase()) }
         }
         is AdNetworkSignal.NetworkEnvironment -> {
             put(PARAM_VPN_ACTIVE, if (vpnActive) 1L else 0L)
@@ -109,6 +110,7 @@ internal const val PARAM_DOMAIN = "domain"
 internal const val PARAM_IS_CONTROL = "is_control"
 internal const val PARAM_REACHABLE = "reachable"
 internal const val PARAM_LATENCY_MS = "latency_ms"
+internal const val PARAM_FAILURE_REASON = "failure_reason"
 internal const val PARAM_VPN_ACTIVE = "vpn_active"
 internal const val PARAM_PRIVATE_DNS_ACTIVE = "private_dns_active"
 internal const val PARAM_PRIVATE_DNS_SERVER = "private_dns_server"

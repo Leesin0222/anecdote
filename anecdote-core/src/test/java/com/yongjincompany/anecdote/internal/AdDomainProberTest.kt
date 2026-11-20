@@ -3,6 +3,7 @@ package com.yongjincompany.anecdote.internal
 import app.cash.turbine.test
 import com.yongjincompany.anecdote.config.ProbeConfig
 import com.yongjincompany.anecdote.signal.AdNetworkSignal
+import com.yongjincompany.anecdote.signal.ProbeFailureReason
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -95,8 +96,44 @@ class AdDomainProberTest {
             val emitted = List(3) { awaitItem() as AdNetworkSignal.ProbeResult }
             assertTrue("all probes must be marked unreachable", emitted.all { !it.reachable })
             assertTrue("latency must be null when DNS short-circuits", emitted.all { it.latencyMs == null })
+            assertTrue(emitted.all { it.failureReason == ProbeFailureReason.DNS_SINKHOLE })
         }
         assertEquals("HTTP must never be invoked when DNS already says no", 0, httpCalls)
+    }
+
+    @Test
+    fun `failure reason distinguishes nxdomain, dns failure, tls and http`() = runTest {
+        val dns = DnsReachabilityChecker { host ->
+            when (host) {
+                "ad1.example" -> DnsResolution(resolved = false, allSinkholed = false, lookupSucceeded = true)
+                "ad2.example" -> DnsResolution(resolved = false, allSinkholed = false, lookupSucceeded = false)
+                else -> DnsResolution(resolved = true, allSinkholed = false, lookupSucceeded = true)
+            }
+        }
+        val checker = HttpReachabilityChecker { url ->
+            when (url) {
+                "https://ad3.example/" -> HttpReachabilityResult(false, null, tlsFailure = true)
+                "https://ad4.example/" -> HttpReachabilityResult(false, null)
+                else -> HttpReachabilityResult(true, 5)
+            }
+        }
+        val prober = AdDomainProber(
+            config = probeConfig(adDomains = listOf("ad1.example", "ad2.example", "ad3.example", "ad4.example")),
+            checker = checker,
+            scope = backgroundScope,
+            dnsChecker = dns,
+            clock = fixedClock,
+        )
+
+        prober.signals.test {
+            prober.runProbeCycle()
+            val byDomain = List(5) { awaitItem() as AdNetworkSignal.ProbeResult }.associateBy { it.domain }
+            assertEquals(ProbeFailureReason.DNS_NXDOMAIN, byDomain.getValue("ad1.example").failureReason)
+            assertEquals(ProbeFailureReason.DNS_FAILURE, byDomain.getValue("ad2.example").failureReason)
+            assertEquals(ProbeFailureReason.TLS_FAILURE, byDomain.getValue("ad3.example").failureReason)
+            assertEquals(ProbeFailureReason.HTTP_UNREACHABLE, byDomain.getValue("ad4.example").failureReason)
+            assertNull(byDomain.getValue("ctrl.example").failureReason)
+        }
     }
 
     @Test

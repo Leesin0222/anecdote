@@ -24,6 +24,8 @@ public sealed class AdNetworkSignal {
         val isControl: Boolean,
         val reachable: Boolean,
         val latencyMs: Long?,
+        /** Set when [reachable] is false; null for reachable probes. */
+        val failureReason: ProbeFailureReason? = null,
     ) : AdNetworkSignal() {
         public companion object {
             public const val NETWORK_ID: String = "probe"

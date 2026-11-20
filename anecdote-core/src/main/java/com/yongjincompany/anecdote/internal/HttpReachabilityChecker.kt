@@ -8,12 +8,15 @@ import okhttp3.Request
 import okhttp3.Response
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 internal data class HttpReachabilityResult(
     val reachable: Boolean,
     val latencyMs: Long?,
+    /** True when the failure happened during the TLS handshake. */
+    val tlsFailure: Boolean = false,
 )
 
 internal fun interface HttpReachabilityChecker {
@@ -39,6 +42,10 @@ internal class OkHttpReachabilityChecker(
                     latencyMs = clock.now() - start,
                 )
             }
+        } catch (ignored: SSLException) {
+            // Certificate mismatch / handshake failure: a blocking or intercepting proxy sits
+            // in the path (Android 7+ apps don't trust user-installed CAs by default).
+            HttpReachabilityResult(reachable = false, latencyMs = null, tlsFailure = true)
         } catch (ignored: IOException) {
             // Any transport-level failure is by definition an "unreachable" probe result;
             // the exception itself carries no additional value beyond that signal.
