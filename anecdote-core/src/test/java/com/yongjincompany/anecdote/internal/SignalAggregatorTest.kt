@@ -2,6 +2,7 @@ package com.yongjincompany.anecdote.internal
 
 import com.yongjincompany.anecdote.signal.AdNetworkSignal
 import com.yongjincompany.anecdote.signal.AdNetworkSignalSource
+import com.yongjincompany.anecdote.signal.ErrorType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -79,6 +80,42 @@ class SignalAggregatorTest {
         val applovin = snap.networks.getValue("applovin")
         assertEquals(1, applovin.loadAttempts)
         assertEquals(0, applovin.loadFailures)
+    }
+
+    @Test
+    fun `no-fill counts as reached attempt, not failure`() = runTest {
+        val source = FakeSource("admob")
+        val aggregator = makeAggregator(backgroundScope)
+
+        aggregator.register(source)
+        testScheduler.runCurrent()
+
+        repeat(4) { source.emit(loadFailed("admob", timestamp = 9_500L, errorType = ErrorType.NO_FILL)) }
+        source.emit(loadFailed("admob", timestamp = 9_500L, errorType = ErrorType.NETWORK_ERROR))
+        testScheduler.runCurrent()
+
+        val admob = aggregator.snapshot.value.networks.getValue("admob")
+        assertEquals(5, admob.loadAttempts)
+        assertEquals(1, admob.loadFailures)
+        assertEquals(0.2, admob.loadFailureRate, 0.0001)
+    }
+
+    @Test
+    fun `ambiguous errors are excluded from load stats`() = runTest {
+        val source = FakeSource("admob")
+        val aggregator = makeAggregator(backgroundScope)
+
+        aggregator.register(source)
+        testScheduler.runCurrent()
+
+        source.emit(loadFailed("admob", timestamp = 9_500L, errorType = ErrorType.INTERNAL_ERROR))
+        source.emit(loadFailed("admob", timestamp = 9_500L, errorType = ErrorType.UNKNOWN))
+        source.emit(loadSucceeded("admob", timestamp = 9_500L))
+        testScheduler.runCurrent()
+
+        val admob = aggregator.snapshot.value.networks.getValue("admob")
+        assertEquals(1, admob.loadAttempts)
+        assertEquals(0, admob.loadFailures)
     }
 
     @Test
@@ -167,10 +204,14 @@ class SignalAggregatorTest {
         latencyMs = latencyMs,
     )
 
-    private fun loadFailed(networkId: String, timestamp: Long) = AdNetworkSignal.LoadFailed(
+    private fun loadFailed(
+        networkId: String,
+        timestamp: Long,
+        errorType: ErrorType = ErrorType.NETWORK_ERROR,
+    ) = AdNetworkSignal.LoadFailed(
         networkId = networkId,
         timestamp = timestamp,
-        errorType = com.yongjincompany.anecdote.signal.ErrorType.NETWORK_ERROR,
+        errorType = errorType,
         rawErrorCode = null,
         rawErrorMessage = null,
     )

@@ -94,9 +94,14 @@ internal class SignalAggregator(
             controlFailureRate = ctrlProbes.failureRate(),
         )
 
+        // Pair of (networkId, isBlockIndicativeFailure). Ambiguous errors are dropped.
         val loadEvents = events.mapNotNull { ev ->
             when (ev) {
-                is AdNetworkSignal.LoadFailed -> ev.networkId to true
+                is AdNetworkSignal.LoadFailed -> when (ev.errorType.loadOutcome()) {
+                    LoadOutcome.BLOCK_INDICATIVE -> ev.networkId to true
+                    LoadOutcome.SERVER_REACHED -> ev.networkId to false
+                    LoadOutcome.AMBIGUOUS -> null
+                }
                 is AdNetworkSignal.LoadSucceeded -> ev.networkId to false
                 else -> null
             }
