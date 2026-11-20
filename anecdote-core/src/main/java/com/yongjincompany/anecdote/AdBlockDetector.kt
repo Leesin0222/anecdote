@@ -9,6 +9,7 @@ import com.yongjincompany.anecdote.internal.AggregateSnapshot
 import com.yongjincompany.anecdote.internal.AndroidInstalledAdBlockerReader
 import com.yongjincompany.anecdote.internal.AndroidNetworkChangeRegistrar
 import com.yongjincompany.anecdote.internal.AndroidNetworkEnvironmentReader
+import com.yongjincompany.anecdote.internal.AndroidPackageChangeRegistrar
 import com.yongjincompany.anecdote.internal.BlockStateEvaluator
 import com.yongjincompany.anecdote.internal.DetectorGate
 import com.yongjincompany.anecdote.internal.EnvSignature
@@ -95,6 +96,7 @@ public class AdBlockDetector private constructor(
                 reader = AndroidInstalledAdBlockerReader(config.context),
                 candidates = InstalledAdBlockerRegistry.PACKAGES +
                     config.extraInstalledAdBlockerPackages,
+                registrar = AndroidPackageChangeRegistrar(config.context),
             )
             builtInSources.clear()
             builtInSources += probe

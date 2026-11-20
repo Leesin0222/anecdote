@@ -58,6 +58,94 @@ class InstalledAdBlockerSourceTest {
         assertEquals(1, readCount)
     }
 
+    private class FakeRegistrar : PackageChangeRegistrar {
+        var listener: ((String?) -> Unit)? = null
+        var unsubscribed = false
+        override fun register(onChange: (String?) -> Unit): PackageChangeSubscription {
+            listener = onChange
+            return PackageChangeSubscription { unsubscribed = true }
+        }
+    }
+
+    @Test
+    fun `uninstalling a candidate re-scans and emits the new set`() = runTest {
+        var installed = setOf("com.adguard.android")
+        val registrar = FakeRegistrar()
+        val source = InstalledAdBlockerSource(
+            reader = { installed },
+            candidates = setOf("com.adguard.android"),
+            registrar = registrar,
+            clock = fixedClock,
+        )
+
+        source.signals.test {
+            source.start()
+            assertEquals(setOf("com.adguard.android"), (awaitItem() as AdNetworkSignal.InstalledAdBlockers).packages)
+
+            installed = emptySet()
+            registrar.listener!!.invoke("com.adguard.android")
+            assertTrue((awaitItem() as AdNetworkSignal.InstalledAdBlockers).packages.isEmpty())
+        }
+    }
+
+    @Test
+    fun `unrelated package change does not re-scan`() = runTest {
+        var readCount = 0
+        val registrar = FakeRegistrar()
+        val source = InstalledAdBlockerSource(
+            reader = {
+                readCount++
+                emptySet()
+            },
+            candidates = setOf("com.adguard.android"),
+            registrar = registrar,
+            clock = fixedClock,
+        )
+
+        source.start()
+        registrar.listener!!.invoke("com.example.game")
+        assertEquals(1, readCount)
+    }
+
+    @Test
+    fun `re-scan with unchanged result does not emit`() = runTest {
+        val registrar = FakeRegistrar()
+        val source = InstalledAdBlockerSource(
+            reader = { setOf("com.adguard.android") },
+            candidates = setOf("com.adguard.android"),
+            registrar = registrar,
+            clock = fixedClock,
+        )
+
+        source.signals.test {
+            source.start()
+            awaitItem()
+            registrar.listener!!.invoke(null)
+            expectNoEvents()
+        }
+    }
+
+    @Test
+    fun `stop unsubscribes and ignores late callbacks`() = runTest {
+        var readCount = 0
+        val registrar = FakeRegistrar()
+        val source = InstalledAdBlockerSource(
+            reader = {
+                readCount++
+                emptySet()
+            },
+            candidates = setOf("com.adguard.android"),
+            registrar = registrar,
+            clock = fixedClock,
+        )
+
+        source.start()
+        source.stop()
+        assertTrue(registrar.unsubscribed)
+        registrar.listener!!.invoke("com.adguard.android")
+        assertEquals(1, readCount)
+    }
+
     @Test
     fun `reader throwing produces empty signal instead of crashing`() = runTest {
         val reader = InstalledAdBlockerReader { error("boom") }
