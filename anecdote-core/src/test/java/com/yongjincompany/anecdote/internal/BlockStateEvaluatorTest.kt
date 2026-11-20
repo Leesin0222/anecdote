@@ -115,26 +115,130 @@ class BlockStateEvaluatorTest {
     }
 
     @Test
-    fun `confidence low for small sample size`() {
+    fun `small probe sample is scaled down and capped below Blocked`() {
         val evaluator = BlockStateEvaluator(defaultPolicy)
+        // delta 1.0 × 80 × (2/4 ad) × (2/2 ctrl) = 40 → Suspected, not Blocked.
         val snap = AggregateSnapshot.EMPTY.copy(
             probe = ProbeStats(
                 adAttempts = 2,
                 adFailures = 2,
                 adFailureRate = 1.0,
-                controlAttempts = 1,
+                controlAttempts = 2,
                 controlFailures = 0,
                 controlFailureRate = 0.0,
             ),
         )
         val result = evaluator.evaluate(snap)
         assertNotNull(result)
-        val confidence = when (result) {
-            is BlockState.Blocked -> result.confidence
-            is BlockState.Suspected -> result.confidence
-            else -> error("expected Blocked or Suspected, got $result")
-        }
-        assertEquals(Confidence.LOW, confidence)
+        assertTrue("expected Suspected, got $result", result is BlockState.Suspected)
+        assertEquals(Confidence.LOW, (result as BlockState.Suspected).confidence)
+    }
+
+    @Test
+    fun `single failed ad probe cannot reach Blocked`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        val snap = AggregateSnapshot.EMPTY.copy(
+            probe = ProbeStats(
+                adAttempts = 1,
+                adFailures = 1,
+                adFailureRate = 1.0,
+                controlAttempts = 1,
+                controlFailures = 0,
+                controlFailureRate = 0.0,
+            ),
+        )
+        // 80 × 0.25 × 0.5 = 10 → NotBlocked
+        assertEquals(BlockState.NotBlocked, evaluator.evaluate(snap))
+    }
+
+    @Test
+    fun `probe without control samples contributes nothing`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        val snap = AggregateSnapshot.EMPTY.copy(
+            probe = ProbeStats(
+                adAttempts = 10,
+                adFailures = 10,
+                adFailureRate = 1.0,
+                controlAttempts = 0,
+                controlFailures = 0,
+                controlFailureRate = 0.0,
+            ),
+        )
+        assertEquals(0, evaluator.computeScore(snap))
+    }
+
+    @Test
+    fun `ambient signals are discounted when ads are demonstrably reachable`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        // Raw ambient: 50 (installed) + 15 (privateDns) + 60 (known) + 10 (vpn) = 135.
+        // Ads reachable → × 0.2 = 27 → NotBlocked.
+        val snap = AggregateSnapshot.EMPTY.copy(
+            probe = reachableProbe(),
+            installedAdBlockerPackages = setOf("com.adguard.android"),
+            environment = EnvironmentStats(
+                vpnActive = true,
+                privateDnsActive = true,
+                privateDnsServer = "abc123.dns.nextdns.io",
+                mcc = null,
+            ),
+        )
+        assertEquals(BlockState.NotBlocked, evaluator.evaluate(snap))
+    }
+
+    @Test
+    fun `ambient signals are not discounted when probe sample is insufficient`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        // Only 2 ad samples (< 4): discount does not apply. 50 + 15 = 65 → Suspected.
+        val snap = AggregateSnapshot.EMPTY.copy(
+            probe = ProbeStats(
+                adAttempts = 2,
+                adFailures = 0,
+                adFailureRate = 0.0,
+                controlAttempts = 2,
+                controlFailures = 0,
+                controlFailureRate = 0.0,
+            ),
+            installedAdBlockerPackages = setOf("com.adguard.android"),
+            environment = EnvironmentStats(false, true, "dns.google", null),
+        )
+        assertTrue(evaluator.evaluate(snap) is BlockState.Suspected)
+    }
+
+    @Test
+    fun `ambient signals are not discounted when ads fail and control is down too`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        // Offline: ads not "reachable", so the known DNS keeps full weight (75 → Blocked).
+        val snap = AggregateSnapshot.EMPTY.copy(
+            probe = ProbeStats(
+                adAttempts = 8,
+                adFailures = 8,
+                adFailureRate = 1.0,
+                controlAttempts = 2,
+                controlFailures = 2,
+                controlFailureRate = 1.0,
+            ),
+            environment = EnvironmentStats(false, true, "dns.adguard.com", null),
+        )
+        assertTrue(evaluator.evaluate(snap) is BlockState.Blocked)
+    }
+
+    @Test
+    fun `strong ambient signal agreeing with direct evidence lifts confidence`() {
+        val evaluator = BlockStateEvaluator(defaultPolicy)
+        // 10 samples → MEDIUM base; known DNS lifts it to HIGH.
+        val snap = AggregateSnapshot.EMPTY.copy(
+            probe = ProbeStats(
+                adAttempts = 8,
+                adFailures = 8,
+                adFailureRate = 1.0,
+                controlAttempts = 2,
+                controlFailures = 0,
+                controlFailureRate = 0.0,
+            ),
+            environment = EnvironmentStats(false, true, "dns.adguard.com", null),
+        )
+        val result = evaluator.evaluate(snap) as BlockState.Blocked
+        assertEquals(Confidence.HIGH, result.confidence)
     }
 
     @Test
@@ -279,7 +383,7 @@ class BlockStateEvaluatorTest {
     }
 
     @Test
-    fun `strong ambient signal yields HIGH confidence without probe samples`() {
+    fun `ambient-only verdict is capped at MEDIUM confidence`() {
         val evaluator = BlockStateEvaluator(defaultPolicy)
         val snap = AggregateSnapshot.EMPTY.copy(
             environment = EnvironmentStats(
@@ -291,8 +395,17 @@ class BlockStateEvaluatorTest {
         )
         val result = evaluator.evaluate(snap)
         val confidence = (result as BlockState.Blocked).confidence
-        assertEquals(Confidence.HIGH, confidence)
+        assertEquals(Confidence.MEDIUM, confidence)
     }
+
+    private fun reachableProbe() = ProbeStats(
+        adAttempts = 8,
+        adFailures = 0,
+        adFailureRate = 0.0,
+        controlAttempts = 2,
+        controlFailures = 0,
+        controlFailureRate = 0.0,
+    )
 
     private fun sampleProbe() = AdNetworkSignal.ProbeResult(
         networkId = "probe",

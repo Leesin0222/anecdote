@@ -17,6 +17,11 @@ package com.yongjincompany.anecdote.config
  *   matches the built-in or consumer-supplied ad-blocker DNS registry.
  * @property installedAdBlockerBonus flat bonus when at least one known ad-blocker package
  *   is installed on the device.
+ * @property ambientDiscountWhenAdsReachable multiplier (0..1) applied to the ambient signals
+ *   above (VPN, Private DNS, known DNS, installed app) when the probe has enough samples and
+ *   ad domains are demonstrably reachable. Ambient signals are circumstantial — an installed
+ *   but disabled blocker, or a NextDNS profile without filters, should not outweigh direct
+ *   evidence that ads load.
  */
 public data class SignalWeights(
     public val probeDeltaWeight: Double = 80.0,
@@ -25,7 +30,14 @@ public data class SignalWeights(
     public val privateDnsBonus: Double = 15.0,
     public val knownAdBlockerDnsBonus: Double = 60.0,
     public val installedAdBlockerBonus: Double = 50.0,
+    public val ambientDiscountWhenAdsReachable: Double = 0.2,
 ) {
+    init {
+        require(ambientDiscountWhenAdsReachable in 0.0..1.0) {
+            "ambientDiscountWhenAdsReachable must be in 0..1, got $ambientDiscountWhenAdsReachable"
+        }
+    }
+
     public companion object {
         public val DEFAULT: SignalWeights = SignalWeights()
     }

@@ -63,4 +63,42 @@ class PolicyConfigTest {
         assertEquals(50, cfg.thresholdSuspected)
         assertEquals(50, cfg.thresholdBlocked)
     }
+
+    @Test
+    fun `non-positive probe sample minimums rejected`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PolicyConfig.Builder().apply { minAdProbeSamples = 0 }.build()
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            PolicyConfig.Builder().apply { minControlProbeSamples = 0 }.build()
+        }
+    }
+
+    @Test
+    fun `toBuilder round-trips every field`() {
+        val original = PolicyConfig.Builder().apply {
+            thresholdSuspected = 30
+            thresholdBlocked = 60
+            maxEvaluationsPerSession = 7
+            disabledRegionMccs = setOf(1, 2)
+            weights = SignalWeights.DEFAULT.copy(vpnBonus = 1.0)
+            minAdProbeSamples = 6
+            minControlProbeSamples = 3
+        }.build()
+        val copy = original.toBuilder().build()
+        assertEquals(original.thresholdSuspected, copy.thresholdSuspected)
+        assertEquals(original.thresholdBlocked, copy.thresholdBlocked)
+        assertEquals(original.maxEvaluationsPerSession, copy.maxEvaluationsPerSession)
+        assertEquals(original.disabledRegionMccs, copy.disabledRegionMccs)
+        assertEquals(original.weights, copy.weights)
+        assertEquals(original.minAdProbeSamples, copy.minAdProbeSamples)
+        assertEquals(original.minControlProbeSamples, copy.minControlProbeSamples)
+    }
+
+    @Test
+    fun `ambient discount outside 0 to 1 rejected`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            SignalWeights(ambientDiscountWhenAdsReachable = 1.5)
+        }
+    }
 }
