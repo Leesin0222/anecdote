@@ -44,7 +44,9 @@ SDK の根幹を支える 6 つの原則:
 **標準搭載のシグナルソース**:
 
 - **Active Probe** — 設定可能な広告ドメイン (デフォルト: `pagead2.googlesyndication.com` など) と対照ドメイン (`www.google.com`, `www.gstatic.com`) に対する HEAD リクエスト。スコアに入るのは失敗率の絶対値ではなく **差分** — 地下鉄やエレベーターでの一時的な通信断によって `Blocked` 判定にならない仕組みです。
-- **ネットワーク環境** — VPN と Private DNS の検出が重み付きボーナス (`+10` と `+15`) として寄与します。
+- **DNS レベルの証拠** — 各プローブは失敗理由 (`DNS_SINKHOLE`、`DNS_NXDOMAIN`、`DNS_FAILURE`、`TLS_FAILURE`、`HTTP_UNREACHABLE`) を記録します。対照ドメインは正常に解決されるのに広告ドメインだけが `0.0.0.0` / ループバック / LAN アドレスに解決される場合、ほぼ確定的な証拠として扱います。
+- **ネットワーク環境** — VPN、Private DNS、そして Private DNS サーバーが既知の広告ブロック用リゾルバー (AdGuard、NextDNS、Control D、Mullvad など) と一致するか。
+- **インストール済み広告ブロックアプリ** — 開始時に確認し、候補パッケージがインストール/削除されると再確認します。
 - **AdMob アダプター** — `AdListener`、`InterstitialAdLoadCallback`、`RewardedAdLoadCallback` をラップし、エラーを `NO_FILL` と実際のネットワーク障害に分類、さらにメディエーションチェーンを分解します。
 - **CustomSignalSource** — AdMob 以外のネットワーク用の公開フック。アダプターを新規作成しなくても、ホストアプリ既存の AppLovin / Unity / ironSource コールバックから `emitLoadFailed` / `emitLoadSucceeded` を呼ぶだけで連携できます。
 
@@ -55,10 +57,19 @@ SDK の根幹を支える 6 つの原則:
 
 **スコアモデル**
 
-- `probe delta × 80` — 支配的な項。
-- `avg load failure rate × 60` — 登録された広告 SDK シグナルにわたる平均失敗率。
-- `+10` (VPN)、`+15` (Private DNS)。
+シグナルは *直接証拠* (広告トラフィックが実際に通ったか) と *環境シグナル* (ブロッカーがありそうな環境か) に分かれます。
+
+| 区分 | シグナル | デフォルト点数 |
+|---|---|---|
+| 直接 | プローブ delta (広告 − 対照の失敗率) | `× 80`。`minAdProbeSamples` (4) / `minControlProbeSamples` (2) に満たない間は比例縮小、対照プローブがなければ `0` |
+| 直接 | 広告ドメインの DNS シンクホール / NXDOMAIN (対照 DNS は正常) | `+60` / `+30` |
+| 直接 | 広告ロードの平均失敗率 | `× 60`。`NETWORK_ERROR` / `TIMEOUT` / `DNS_RESOLUTION_FAILED` のみ失敗として数え、`NO_FILL` は到達した試行として数えます |
+| 環境 | VPN / Private DNS / 既知のブロック DNS / インストール済みブロックアプリ | `+10` / `+15` / `+60` / `+50` |
+
+- プローブのサンプルが十分で広告ドメインに到達できる場合 (失敗率 ≤ 20%、DNS ブロックなし)、環境シグナルの点数に `ambientDiscountWhenAdsReachable` (`0.2`) を掛けます。インストールされているだけで無効なブロッカーが、実際にロードされる広告に勝たないようにするためです。
+- 環境シグナルだけによる判定は `Confidence.MEDIUM` が上限です。直接証拠と強いシグナル (DNS ブロック、既知の DNS、インストール済みブロッカー) が揃うと信頼度が 1 段階上がります。
 - 最終スコアは `0..100` にクランプ。デフォルト閾値は `40 (Suspected)` / `70 (Blocked)`。
+- `Suspected` / `Blocked` には各シグナルの寄与点数を含む `ScoreBreakdown` が付くため、ユーザーがなぜ判定されたかを確認できます。
 
 ## 検出モデル
 
@@ -67,9 +78,9 @@ SDK の根幹を支える 6 つの原則:
 誤検出を抑えながら本物の検出は鈍らせないために、2 つのガードが入っています:
 
 - **グレースピリオド (`gracePeriodMs`, デフォルト 5s)** — コールドスタート後、またはネットワーク変化後、十分な根拠が集まるまで検出器は `Unknown` のままです。
-- **セッションあたりの再評価上限 (`maxEvaluationsPerSession`, デフォルト 3)** — `Confidence.HIGH` で確定した `Blocked` は、ネットワーク環境が変わるまで再評価を停止します。低信頼度の判定は上限まで再評価を続けます。
+- **セッションあたりの再評価上限 (`maxEvaluationsPerSession`, デフォルト 3)** — 判定 (種類 + 信頼度) が変わった回数を数えます。`Confidence.HIGH` で確定した `Blocked` は、ネットワーク環境またはポリシーが変わるまで再評価を停止します。低信頼度の判定は上限まで再評価を続けます。
 
-ネットワーク遷移 (Wi-Fi ⇄ セルラー、VPN の切替、Private DNS の変更) は自動的にセッションをリセットするため、トンネル内での短時間の通信断がユーザーを `Blocked` に固定し続けることはありません。
+ネットワーク遷移 (VPN の切替、Private DNS のオン/オフやサーバー変更) は自動的にセッションをリセットし、以前のネットワーク経路で集めたプローブ/ロードの証拠を破棄します。トンネル内での短時間の通信断や、直前にオフにしたブロッカーがユーザーを `Blocked` に固定し続けることはありません。
 
 ## クイックスタート
 
@@ -117,6 +128,8 @@ AdBlockDetector.Builder(context)
         thresholdBlocked = 70              // 0..100, デフォルト 70
         maxEvaluationsPerSession = 3       // セッションごとの状態遷移回数
         disabledRegionMccs = setOf(460)    // デフォルトは CN。必要に応じて追加
+        minAdProbeSamples = 4              // このサンプル数からプローブを満額で反映
+        minControlProbeSamples = 2
     }
     .probe {
         timeoutMs = 3_000
@@ -164,9 +177,23 @@ AdBlockDetector.Builder(context)
     weights = SignalWeights.DEFAULT.copy(
         knownAdBlockerDnsBonus = 80.0,   // Private DNS マッチ重視
         installedAdBlockerBonus = 30.0,  // インストール ≠ 有効、軽めに
+        ambientDiscountWhenAdsReachable = 0.0, // 広告がロードされたら環境シグナルを無視
     )
 }
 ```
+
+#### 実行時のポリシー更新
+
+閾値とウェイトは `build()` 後も Remote Config などから変更でき、detector の再起動は不要です。ブロック内で指定したフィールドだけが変わり、セッションのロックを解除して最新の証拠で即座に再評価します。
+
+```kotlin
+detector.updatePolicy {
+    thresholdBlocked = remoteConfig.getLong("adblock_threshold_blocked").toInt()
+    weights = weights.copy(installedAdBlockerBonus = 30.0)
+}
+```
+
+不正な組み合わせの場合は `IllegalArgumentException` を投げ、以前のポリシーが維持されます。
 
 ### カスタムシグナルソース (AdMob 以外のネットワーク)
 

@@ -44,7 +44,9 @@ SDK를 지탱하는 여섯 가지 원칙입니다.
 기본 제공 **신호 소스**:
 
 - **Active Probe** — 설정 가능한 광고 도메인(기본: `pagead2.googlesyndication.com` 등)과 컨트롤 도메인(`www.google.com`, `www.gstatic.com`)에 대한 HEAD 요청. 절대 실패율이 아니라 **두 그룹의 실패율 차이(delta)** 가 점수에 반영되므로, 지하철/엘리베이터 같은 일반적인 네트워크 단절은 Blocked로 이어지지 않습니다.
-- **네트워크 환경** — VPN과 Private DNS 감지가 각각 `+10`, `+15`의 가중치 보너스로 반영됩니다.
+- **DNS 수준 증거** — 각 프로브는 실패 사유(`DNS_SINKHOLE`, `DNS_NXDOMAIN`, `DNS_FAILURE`, `TLS_FAILURE`, `HTTP_UNREACHABLE`)를 기록합니다. 대조 도메인은 정상 해석되는데 광고 도메인만 `0.0.0.0` / 루프백 / LAN 주소로 해석되면 사실상 확정 증거로 취급합니다.
+- **네트워크 환경** — VPN, Private DNS, 그리고 Private DNS 서버가 알려진 광고 차단 리졸버(AdGuard, NextDNS, Control D, Mullvad 등)와 일치하는지.
+- **설치된 광고 차단 앱** — 시작 시 검사하고, 후보 패키지가 설치/삭제되면 다시 검사합니다.
 - **AdMob 어댑터** — `AdListener`, `InterstitialAdLoadCallback`, `RewardedAdLoadCallback`을 감싸 에러를 분류(`NO_FILL` vs 실제 네트워크 실패)하고 미디에이션 체인을 분해합니다.
 - **CustomSignalSource** — AdMob 이외 네트워크용 공개 훅. 호스트가 이미 쓰는 AppLovin / Unity / ironSource 콜백이 어댑터를 새로 작성하지 않고도 `emitLoadFailed` / `emitLoadSucceeded`만 호출하면 됩니다.
 
@@ -55,10 +57,19 @@ SDK를 지탱하는 여섯 가지 원칙입니다.
 
 **스코어 모델**
 
-- `probe delta × 80` — 가장 핵심적인 항입니다.
-- `avg load failure rate × 60` — 등록된 광고 SDK 신호들의 평균 실패율.
-- VPN 감지 시 `+10`, Private DNS 감지 시 `+15`.
+신호는 *직접 증거*(광고 트래픽이 실제로 나갔는가)와 *환경 신호*(차단기가 있을 법한 환경인가)로 나뉩니다.
+
+| 구분 | 신호 | 기본 점수 |
+|---|---|---|
+| 직접 | 프로브 delta (광고 − 대조 실패율) | `× 80`. `minAdProbeSamples`(4) / `minControlProbeSamples`(2)에 못 미치면 비율만큼 축소, 대조 프로브가 없으면 `0` |
+| 직접 | 광고 도메인 DNS 싱크홀 / NXDOMAIN (대조 DNS 정상) | `+60` / `+30` |
+| 직접 | 광고 로드 평균 실패율 | `× 60`. `NETWORK_ERROR` / `TIMEOUT` / `DNS_RESOLUTION_FAILED`만 실패로 세고 `NO_FILL`은 도달한 시도로 셉니다 |
+| 환경 | VPN / Private DNS / 알려진 차단 DNS / 설치된 차단 앱 | `+10` / `+15` / `+60` / `+50` |
+
+- 프로브 표본이 충분하고 광고 도메인에 도달 가능하면(실패율 ≤ 20%, DNS 차단 없음) 환경 신호 점수에 `ambientDiscountWhenAdsReachable`(`0.2`)를 곱합니다. 설치만 하고 꺼 둔 차단 앱이 실제로 로드되는 광고를 이기지 못하게 하기 위함입니다.
+- 환경 신호만으로 낸 판정은 `Confidence.MEDIUM`이 상한입니다. 직접 증거와 함께 강한 신호(DNS 차단, 알려진 DNS, 설치된 차단 앱)가 있으면 confidence가 한 단계 올라갑니다.
 - 최종 점수는 `0..100`로 클램프되며, 기본 임계값은 `40 (Suspected)` / `70 (Blocked)`입니다.
+- `Suspected` / `Blocked`에는 신호별 기여 점수를 담은 `ScoreBreakdown`이 포함되어, 사용자가 왜 판정됐는지 확인할 수 있습니다.
 
 ## 판정 모델
 
@@ -67,9 +78,9 @@ SDK를 지탱하는 여섯 가지 원칙입니다.
 다음 두 가지 가드가 실제 검출 감도는 떨어뜨리지 않으면서 오탐만 줄여줍니다.
 
 - **Grace period (`gracePeriodMs`, 기본 5s)** — 콜드 스타트 직후나 네트워크 전환 직후에는 충분한 근거가 모이기 전까지 `Unknown` 상태를 유지합니다.
-- **세션당 재평가 한도 (`maxEvaluationsPerSession`, 기본 3)** — `Confidence.HIGH`로 확정된 Blocked는 네트워크 환경이 바뀔 때까지 재평가를 멈춥니다. 낮은 confidence는 한도까지 재평가를 계속합니다.
+- **세션당 재평가 한도 (`maxEvaluationsPerSession`, 기본 3)** — 판정(종류 + confidence)이 바뀐 횟수를 셉니다. `Confidence.HIGH`로 확정된 Blocked는 네트워크 환경이나 정책이 바뀔 때까지 재평가를 멈춥니다. 낮은 confidence는 한도까지 재평가를 계속합니다.
 
-네트워크 전환(Wi-Fi ↔ cellular, VPN 토글, Private DNS 변경)이 일어나면 세션이 자동으로 reset 됩니다. 짧은 터널 통과가 사용자를 영구적으로 `Blocked`로 뒤집지 못합니다.
+네트워크 전환(VPN 토글, Private DNS on/off 또는 서버 변경)이 일어나면 세션이 자동으로 reset 되고, 이전 네트워크 경로에서 모은 프로브/로드 증거는 버려집니다. 짧은 터널 통과나 방금 끈 차단기가 사용자를 계속 `Blocked`로 묶어두지 못합니다.
 
 ## 빠른 시작
 
@@ -116,6 +127,8 @@ AdBlockDetector.Builder(context)
         thresholdBlocked = 70              // 0..100, 기본 70
         maxEvaluationsPerSession = 3       // 세션당 상태 전이 횟수
         disabledRegionMccs = setOf(460)    // 기본 CN. 필요시 추가
+        minAdProbeSamples = 4              // 이 표본 수부터 프로브를 전체 가중치로 반영
+        minControlProbeSamples = 2
     }
     .probe {
         timeoutMs = 3_000
@@ -163,9 +176,23 @@ AdBlockDetector.Builder(context)
     weights = SignalWeights.DEFAULT.copy(
         knownAdBlockerDnsBonus = 80.0,   // Private DNS 매칭 가중치 ↑
         installedAdBlockerBonus = 30.0,  // 설치 ≠ 활성, 가중치 ↓
+        ambientDiscountWhenAdsReachable = 0.0, // 광고가 로드되면 환경 신호 무시
     )
 }
 ```
+
+#### 런타임 정책 갱신
+
+임계값과 가중치는 `build()` 이후에도 Remote Config 등으로 바꿀 수 있습니다. detector를 재시작할 필요가 없습니다. 블록에서 지정한 필드만 바뀌고, 세션 잠금을 풀고 최신 증거로 즉시 재평가합니다.
+
+```kotlin
+detector.updatePolicy {
+    thresholdBlocked = remoteConfig.getLong("adblock_threshold_blocked").toInt()
+    weights = weights.copy(installedAdBlockerBonus = 30.0)
+}
+```
+
+잘못된 조합이면 `IllegalArgumentException`을 던지고 이전 정책이 유지됩니다.
 
 ### 커스텀 시그널 소스 (비-AdMob 네트워크)
 

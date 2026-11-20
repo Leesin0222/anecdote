@@ -44,7 +44,9 @@ Six load-bearing principles anchor the SDK:
 **Signal sources** out of the box:
 
 - **Active Probe** — HEAD requests against configurable ad domains (default: `pagead2.googlesyndication.com`, etc.) vs. control domains (`www.google.com`, `www.gstatic.com`). The delta in failure rate, not the absolute failure rate, is what feeds the score — so subway/elevator outages don't trigger Blocked.
-- **Network environment** — VPN and Private DNS detection contribute weighted bonuses (`+10` and `+15`).
+- **DNS-level evidence** — each probe records *why* it failed (`DNS_SINKHOLE`, `DNS_NXDOMAIN`, `DNS_FAILURE`, `TLS_FAILURE`, `HTTP_UNREACHABLE`). An ad domain resolving to `0.0.0.0` / loopback / a LAN address while control domains resolve normally is treated as near-certain evidence.
+- **Network environment** — VPN, Private DNS, and a Private DNS server matching a known ad-blocking resolver (AdGuard, NextDNS, Control D, Mullvad…).
+- **Installed ad-blocker apps** — checked at start and re-checked when a candidate package is installed or removed.
 - **AdMob adapter** — wraps `AdListener`, `InterstitialAdLoadCallback`, `RewardedAdLoadCallback`, classifies errors (`NO_FILL` vs. real network failure), and decomposes mediation chains.
 - **CustomSignalSource** — a public hook for any non-AdMob network, so a host app's existing AppLovin / Unity / ironSource callbacks can emit `emitLoadFailed` / `emitLoadSucceeded` without writing a full adapter.
 
@@ -55,10 +57,19 @@ Six load-bearing principles anchor the SDK:
 
 **Score model**
 
-- `probe delta × 80` — the dominant term.
-- `avg load failure rate × 60` — averaged across registered ad SDK signals.
-- `+10` for VPN, `+15` for Private DNS.
+Signals are split into *direct evidence* (did ad traffic actually get through?) and *ambient signals* (does the environment look like a blocker?).
+
+| Tier | Signal | Default points |
+|---|---|---|
+| Direct | probe delta (ad − control failure rate) | `× 80`, scaled down until `minAdProbeSamples` (4) / `minControlProbeSamples` (2) are reached; `0` with no control probe |
+| Direct | ad domain DNS sinkhole / NXDOMAIN (control DNS healthy) | `+60` / `+30` |
+| Direct | avg ad load failure rate | `× 60` — only `NETWORK_ERROR` / `TIMEOUT` / `DNS_RESOLUTION_FAILED` count as failures; `NO_FILL` counts as a reached attempt |
+| Ambient | VPN / Private DNS / known ad-blocker DNS / installed blocker app | `+10` / `+15` / `+60` / `+50` |
+
+- When the probe has enough samples and ad domains are reachable (failure rate ≤ 20%, no DNS block), ambient points are multiplied by `ambientDiscountWhenAdsReachable` (`0.2`) — an installed-but-disabled blocker can't outvote ads that load.
+- A verdict built from ambient signals alone is capped at `Confidence.MEDIUM`; a strong signal (DNS block, known DNS, installed blocker) next to direct evidence lifts confidence one step.
 - Final score clamped to `0..100`; default thresholds `40 (Suspected)` / `70 (Blocked)`.
+- `Suspected` / `Blocked` carry a `ScoreBreakdown` with every contribution, so you can see why a user was flagged.
 
 ## Detection Model
 
@@ -67,9 +78,9 @@ The detector runs an evaluation loop while `start()` is in scope. On each tick i
 Two guards reduce false positives without dampening real detections:
 
 - **Grace period (`gracePeriodMs`, default 5s)** — after cold start or after a network change, the detector stays `Unknown` until enough evidence has accumulated.
-- **Per-session re-evaluation cap (`maxEvaluationsPerSession`, default 3)** — a confirmed `Blocked` with `Confidence.HIGH` stops re-evaluating until the network environment changes; lower-confidence verdicts keep re-evaluating up to the cap.
+- **Per-session re-evaluation cap (`maxEvaluationsPerSession`, default 3)** — counts verdict changes (kind + confidence). A confirmed `Blocked` with `Confidence.HIGH` stops re-evaluating until the network environment or policy changes; lower-confidence verdicts keep re-evaluating up to the cap.
 
-Network transitions (Wi-Fi ↔ cellular, VPN toggle, Private DNS change) automatically reset the session, so a brief in-tunnel outage cannot persistently flip a user to `Blocked`.
+Network transitions (VPN toggle, Private DNS on/off or server change) automatically reset the session and drop probe/load evidence gathered on the old network path, so a brief in-tunnel outage — or a blocker the user just turned off — cannot persistently flip a user to `Blocked`.
 
 ## Quick Start
 
@@ -117,6 +128,8 @@ AdBlockDetector.Builder(context)
         thresholdBlocked = 70              // 0..100, default 70
         maxEvaluationsPerSession = 3       // state transitions per session
         disabledRegionMccs = setOf(460)    // CN by default; add more as needed
+        minAdProbeSamples = 4              // probe counts at full weight from here
+        minControlProbeSamples = 2
     }
     .probe {
         timeoutMs = 3_000
@@ -164,9 +177,23 @@ Each signal contributes to the 0..100 score via [`SignalWeights`](anecdote-core/
     weights = SignalWeights.DEFAULT.copy(
         knownAdBlockerDnsBonus = 80.0,   // heavier weight for Private-DNS match
         installedAdBlockerBonus = 30.0,  // lighter — installed ≠ active
+        ambientDiscountWhenAdsReachable = 0.0, // ignore ambient signals once ads load
     )
 }
 ```
+
+#### Updating the policy at runtime
+
+Thresholds and weights can be changed after `build()` — e.g. from Remote Config — without restarting the detector. Only the fields you set change; the session lock is reset and the latest evidence is re-evaluated immediately:
+
+```kotlin
+detector.updatePolicy {
+    thresholdBlocked = remoteConfig.getLong("adblock_threshold_blocked").toInt()
+    weights = weights.copy(installedAdBlockerBonus = 30.0)
+}
+```
+
+An invalid combination throws `IllegalArgumentException` and the previous policy stays in effect.
 
 ### Custom signal source (non-AdMob networks)
 
